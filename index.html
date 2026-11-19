@@ -159,6 +159,8 @@
   .down-field label{display:block; font-size:12.5px; font-weight:700; color:var(--muted); margin-bottom:5px}
   .down-error{color:#dc2626; font-size:12.5px; font-weight:700; margin-top:8px; display:none}
   @media (prefers-color-scheme: dark){ .down-error{color:#f87171} }
+  .down-duration{margin-top:10px; padding-top:10px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-size:13.5px; color:var(--muted)}
+  .down-duration strong{color:var(--text); font-size:15px}
 
   .result{background:var(--result-bg); color:var(--result-text); border-color:transparent}
   .result .field-head{margin-bottom:4px}
@@ -522,6 +524,7 @@
       addDowntime: '+ Add another downtime',
       from: 'From',
       to: 'To',
+      duration: 'Duration',
       downInvalid: 'To must be after From',
       downFromAria: 'Downtime start',
       downToAria: 'Downtime end',
@@ -563,6 +566,7 @@
       addDowntime: '+ 添加另一次停机',
       from: '开始',
       to: '结束',
+      duration: '时长',
       downInvalid: '结束时间必须晚于开始时间',
       downFromAria: '停机开始时间',
       downToAria: '停机结束时间',
@@ -609,15 +613,7 @@
     return pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
   function fmtTime(d){
-    var h = d.getHours(), m = d.getMinutes();
-    if(lang === 'zh'){
-      var period = h < 12 ? '上午' : '下午';
-      var h12z = h % 12; if(h12z===0) h12z=12;
-      return period+' '+h12z+':'+pad(m)+'  ('+pad(h)+':'+pad(m)+')';
-    }
-    var ampm = h >= 12 ? 'PM' : 'AM';
-    var h12 = h % 12; if(h12===0) h12=12;
-    return h12+':'+pad(m)+' '+ampm+'  ('+pad(h)+':'+pad(m)+')';
+    return pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
   function fmtDate(d){
     if(lang === 'zh'){
@@ -698,13 +694,12 @@
     var entries = entryEls();
     entries.forEach(function(entry){
       var nameEl = entry.querySelector('.downtime-entry-name');
+      nameEl.textContent = t().downtime;
       var mins = entryMins(entry);
-      if(mins > 0){
-        nameEl.innerHTML =
-          t().downtime + ' <span>· ' + fmtDuration(mins) + '</span>';
-      } else {
-        nameEl.textContent = t().downtime;
-      }
+      var durLabel = entry.querySelector('.down-duration span');
+      if(durLabel) durLabel.textContent = t().duration + ':';
+      var durVal = entry.querySelector('.down-duration strong');
+      if(durVal) durVal.textContent = mins > 0 ? fmtDuration(mins) : '—';
       var rm = entry.querySelector('.btn-remove');
       rm.textContent = t().remove;
       rm.setAttribute('aria-label', t().removeAria);
@@ -771,6 +766,17 @@
     toField.appendChild(toLabel);
     toField.appendChild(toIn);
     entry.appendChild(toField);
+
+    var durLine = document.createElement('div');
+    durLine.className = 'down-duration';
+    var durLabel = document.createElement('span');
+    durLabel.textContent = t().duration + ':';
+    var durVal = document.createElement('strong');
+    durVal.className = 'num';
+    durVal.textContent = '—';
+    durLine.appendChild(durLabel);
+    durLine.appendChild(durVal);
+    entry.appendChild(durLine);
 
     var err = document.createElement('div');
     err.className = 'down-error';
