@@ -89,13 +89,25 @@
   label.title{font-size:15px; font-weight:700; display:block}
   .hint{font-size:12.5px; color:var(--muted); margin-top:2px}
 
-  input[type="datetime-local"], input[type="number"]{
+  input[type="datetime-local"], input[type="number"], input[type="text"]{
     width:100%; background:var(--surface-2); border:1.5px solid var(--line);
     border-radius:8px; padding:10px 12px; font-size:16px; color:var(--text);
     font-family:inherit; outline:none;
   }
   input:focus{border-color:var(--accent); background:var(--surface); box-shadow:0 0 0 4px var(--focus)}
   .start-row{display:grid; grid-template-columns:1fr auto; gap:8px}
+  .machine-row{display:flex; gap:8px; margin-bottom:14px}
+  .machine-row select{
+    flex:1; min-width:0; height:44px; background:var(--surface-2);
+    border:1.5px solid var(--line); border-radius:8px; padding:0 10px;
+    font-size:15px; font-weight:700; color:var(--text); font-family:inherit; outline:none;
+  }
+  .machine-row select:focus{border-color:var(--accent); background:var(--surface)}
+  .machine-del{
+    flex:0 0 44px; height:44px; border:1.5px solid var(--line); background:var(--surface);
+    color:var(--muted); border-radius:8px; font-size:16px; cursor:pointer; font-family:inherit;
+  }
+  .machine-del:hover{border-color:var(--line-strong); color:var(--text)}
   .btn{
     border:0; cursor:pointer; border-radius:8px; padding:10px 14px;
     font-family:inherit; font-weight:700; font-size:14px;
@@ -189,6 +201,21 @@
 
   <section class="card" aria-label="Inputs">
 
+    <div class="machine-row">
+      <select id="machineSelect" aria-label="Machine"></select>
+      <button type="button" class="machine-del" id="machineDelBtn" aria-label="Delete machine">🗑</button>
+    </div>
+
+    <div class="field">
+      <div class="field-head">
+        <div>
+          <label class="title" for="machineNo" id="machineLabel">Machine No.</label>
+          <div class="hint" id="machineHint">Which machine is this job for.</div>
+        </div>
+      </div>
+      <input type="text" id="machineNo" autocomplete="off" />
+    </div>
+
     <div class="field">
       <div class="field-head">
         <div>
@@ -272,6 +299,9 @@
 <script>
 (function(){
   var startEl = document.getElementById('startTime');
+  var machineEl = document.getElementById('machineNo');
+  var machineSelect = document.getElementById('machineSelect');
+  var machineDelBtn = document.getElementById('machineDelBtn');
   var totalH = document.getElementById('totalH');
   var totalM = document.getElementById('totalM');
   var downList = document.getElementById('downtimeList');
@@ -279,20 +309,119 @@
   var lang = 'en';
 
   // Persist entered data in localStorage so a refresh keeps it.
+  // One record per machine; each machine keeps its own job data.
   var STORE_KEY = 'machineTimeCalc.v1';
+  var machines = [];
+  var activeMachineId = null;
+
+  function newMachineId(){
+    return 'm' + Date.now().toString(36) + Math.floor(Math.random() * 1000);
+  }
+  function defaultJob(){
+    var s = new Date(); s.setHours(8,0,0,0);
+    return { start: toLocalInputValue(s), totalH: '8', totalM: '00', downs: [{ h: '', m: '' }] };
+  }
+  function newMachine(){
+    var job = defaultJob();
+    return { id: newMachineId(), name: '', start: job.start, totalH: job.totalH, totalM: job.totalM, downs: job.downs };
+  }
+  function activeMachine(){
+    for(var i = 0; i < machines.length; i++){
+      if(machines[i].id === activeMachineId) return machines[i];
+    }
+    return machines[0] || null;
+  }
+  function activeMachineIndex(){
+    for(var i = 0; i < machines.length; i++){
+      if(machines[i].id === activeMachineId) return i;
+    }
+    return 0;
+  }
+  function defaultMachineName(i){
+    return lang === 'zh' ? '机器 ' + (i + 1) : 'Machine ' + (i + 1);
+  }
+  function machineDisplayName(m, i){
+    var n = (m.name || '').trim();
+    return n ? n : defaultMachineName(i);
+  }
+
+  function readFormToMachine(){
+    var m = activeMachine();
+    if(!m) return;
+    m.name = machineEl.value;
+    m.start = startEl.value;
+    m.totalH = totalH.value;
+    m.totalM = totalM.value;
+    m.downs = entryEls().map(function(entry){
+      var inputs = entry.querySelectorAll('input[type="number"]');
+      return { h: inputs[0].value, m: inputs[1].value };
+    });
+  }
+  function writeMachineToForm(m){
+    machineEl.value = m.name || '';
+    startEl.value = m.start || '';
+    totalH.value = m.totalH;
+    totalM.value = m.totalM;
+    downList.innerHTML = '';
+    var downs = Array.isArray(m.downs) ? m.downs : [];
+    if(downs.length === 0) downs = [{ h: '', m: '' }];
+    downs.forEach(function(d){
+      addDowntime(d && d.h ? d.h : '', d && d.m ? d.m : '', false);
+    });
+  }
+
+  function rebuildMachineSelect(){
+    machineSelect.innerHTML = '';
+    machines.forEach(function(m, i){
+      var opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = machineDisplayName(m, i);
+      machineSelect.appendChild(opt);
+    });
+    var addOpt = document.createElement('option');
+    addOpt.value = '__add__';
+    addOpt.textContent = t().addMachine;
+    machineSelect.appendChild(addOpt);
+    machineSelect.value = activeMachineId;
+    machineDelBtn.style.display = machines.length > 1 ? '' : 'none';
+  }
+
+  function switchMachine(id){
+    if(id === activeMachineId) return;
+    saveState();
+    activeMachineId = id;
+    writeMachineToForm(activeMachine());
+    rebuildMachineSelect();
+    calculate();
+  }
+  function createMachine(){
+    saveState();
+    var m = newMachine();
+    machines.push(m);
+    activeMachineId = m.id;
+    writeMachineToForm(m);
+    rebuildMachineSelect();
+    calculate();
+    machineEl.focus();
+  }
+  function deleteMachine(){
+    if(machines.length <= 1) return;
+    if(!window.confirm(t().deleteMachineConfirm)) return;
+    var idx = activeMachineIndex();
+    machines.splice(idx, 1);
+    activeMachineId = machines[Math.min(idx, machines.length - 1)].id;
+    writeMachineToForm(activeMachine());
+    rebuildMachineSelect();
+    calculate();
+  }
 
   function saveState(){
     try{
-      var downs = entryEls().map(function(entry){
-        var inputs = entry.querySelectorAll('input[type="number"]');
-        return { h: inputs[0].value, m: inputs[1].value };
-      });
+      readFormToMachine();
       localStorage.setItem(STORE_KEY, JSON.stringify({
         lang: lang,
-        start: startEl.value,
-        totalH: totalH.value,
-        totalM: totalM.value,
-        downs: downs
+        machines: machines,
+        activeMachineId: activeMachineId
       }));
     }catch(e){}
   }
@@ -304,21 +433,36 @@
       var s = JSON.parse(raw);
       if(!s || typeof s !== 'object') return false;
       if(s.lang === 'en' || s.lang === 'zh') lang = s.lang;
-      if(typeof s.start === 'string') startEl.value = s.start;
-      if(typeof s.totalH !== 'undefined') totalH.value = s.totalH;
-      if(typeof s.totalM !== 'undefined') totalM.value = s.totalM;
-      downList.innerHTML = '';
-      var downs = Array.isArray(s.downs) ? s.downs : [];
-      if(downs.length === 0) downs = [{ h: '', m: '' }];
-      downs.forEach(function(d){
-        addDowntime(d && d.h ? d.h : '', d && d.m ? d.m : '', false);
-      });
+      if(Array.isArray(s.machines) && s.machines.length){
+        machines = s.machines;
+        activeMachineId = s.activeMachineId || machines[0].id;
+        if(!activeMachine()) activeMachineId = machines[0].id;
+      } else if(typeof s.start === 'string'){
+        // Migrate the old single-machine shape into the first machine.
+        var m = newMachine();
+        m.name = typeof s.machine === 'string' ? s.machine : '';
+        m.start = s.start;
+        if(typeof s.totalH !== 'undefined') m.totalH = s.totalH;
+        if(typeof s.totalM !== 'undefined') m.totalM = s.totalM;
+        if(Array.isArray(s.downs) && s.downs.length) m.downs = s.downs;
+        machines = [m];
+        activeMachineId = m.id;
+      } else {
+        return false;
+      }
+      writeMachineToForm(activeMachine());
+      rebuildMachineSelect();
       return true;
     }catch(e){ return false; }
   }
 
   var T = {
     en: {
+      machineLabel: 'Machine No.',
+      machineHint: 'Which machine is this job for.',
+      addMachine: '＋ Add machine',
+      deleteMachine: 'Delete machine',
+      deleteMachineConfirm: 'Delete this machine and all its data?',
       startLabel: 'Starting Date and Time',
       startHint: 'When the machine starts running.',
       now: 'Now',
@@ -352,6 +496,11 @@
       totalDowntime: 'Total downtime'
     },
     zh: {
+      machineLabel: '机器编号',
+      machineHint: '此作业使用的机器。',
+      addMachine: '＋ 添加机器',
+      deleteMachine: '删除机器',
+      deleteMachineConfirm: '删除这台机器及其全部数据吗？',
       startLabel: '开始日期和时间',
       startHint: '机器开始运行的时间。',
       now: '现在',
@@ -556,11 +705,23 @@
   }
 
   function setDefaults(){
-    var s = new Date(); s.setHours(8,0,0,0);
-    startEl.value = toLocalInputValue(s);
-    totalH.value = 8; totalM.value = '00';
-    downList.innerHTML = '';
-    addDowntime(0, 0, false);
+    machines = [newMachine()];
+    activeMachineId = machines[0].id;
+    writeMachineToForm(machines[0]);
+    rebuildMachineSelect();
+  }
+
+  // Reset only the current machine's job; its machine number stays.
+  function resetCurrentMachine(){
+    var m = activeMachine();
+    if(!m) return;
+    var job = defaultJob();
+    m.start = job.start;
+    m.totalH = job.totalH;
+    m.totalM = job.totalM;
+    m.downs = job.downs;
+    writeMachineToForm(m);
+    rebuildMachineSelect();
   }
 
   function applyLanguage(){
@@ -568,6 +729,8 @@
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
     document.getElementById('langEn').setAttribute('aria-pressed', lang === 'en' ? 'true' : 'false');
     document.getElementById('langZh').setAttribute('aria-pressed', lang === 'zh' ? 'true' : 'false');
+    document.getElementById('machineLabel').textContent = s.machineLabel;
+    document.getElementById('machineHint').textContent = s.machineHint;
     document.getElementById('startLabel').textContent = s.startLabel;
     document.getElementById('startHint').textContent = s.startHint;
     document.getElementById('nowBtn').textContent = s.now;
@@ -586,8 +749,10 @@
     document.getElementById('copyBtn').textContent = s.copy;
     document.getElementById('resetBtn').textContent = s.reset;
     document.getElementById('footerNote').textContent = s.footer;
+    machineDelBtn.setAttribute('aria-label', s.deleteMachine);
     totalH.setAttribute('aria-label', s.totalHoursAria);
     totalM.setAttribute('aria-label', s.totalMinutesAria);
+    rebuildMachineSelect();
   }
 
   function setLanguage(newLang){
@@ -675,6 +840,14 @@
   });
   startEl.addEventListener('input', calculate);
   startEl.addEventListener('change', calculate);
+  machineEl.addEventListener('input', function(){ calculate(); rebuildMachineSelect(); });
+
+  machineSelect.addEventListener('change', function(){
+    var v = machineSelect.value;
+    if(v === '__add__') createMachine();
+    else switchMachine(v);
+  });
+  machineDelBtn.addEventListener('click', deleteMachine);
 
   document.getElementById('langEn').addEventListener('click', function(){ setLanguage('en'); });
   document.getElementById('langZh').addEventListener('click', function(){ setLanguage('zh'); });
@@ -695,11 +868,12 @@
     var msg = document.getElementById('copiedMsg');
     if(!r){ msg.textContent = t().copyNeedStart; return; }
     var s = t();
-    var lines = [
-      'Machine Time Calculator',
+    var lines = ['Machine Time Calculator'];
+    lines.push(s.machineLabel + ': ' + machineDisplayName(activeMachine(), activeMachineIndex()));
+    lines.push(
       s.start + ': ' + fmtShort(r.start),
       s.totalDuration + ': ' + fmtDuration(r.total)
-    ];
+    );
     if(r.entries.length > 1){
       r.entries.forEach(function(mins){
         lines.push(s.downtime + ': ' + fmtDuration(mins));
@@ -723,7 +897,7 @@
   });
 
   document.getElementById('resetBtn').addEventListener('click', function(){
-    setDefaults();
+    resetCurrentMachine();
     document.getElementById('copiedMsg').textContent = '';
     calculate();
     window.scrollTo({ top:0, behavior:'smooth' });
