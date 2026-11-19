@@ -278,6 +278,45 @@
 
   var lang = 'en';
 
+  // Persist entered data in localStorage so a refresh keeps it.
+  var STORE_KEY = 'machineTimeCalc.v1';
+
+  function saveState(){
+    try{
+      var downs = entryEls().map(function(entry){
+        var inputs = entry.querySelectorAll('input[type="number"]');
+        return { h: inputs[0].value, m: inputs[1].value };
+      });
+      localStorage.setItem(STORE_KEY, JSON.stringify({
+        lang: lang,
+        start: startEl.value,
+        totalH: totalH.value,
+        totalM: totalM.value,
+        downs: downs
+      }));
+    }catch(e){}
+  }
+
+  function loadState(){
+    try{
+      var raw = localStorage.getItem(STORE_KEY);
+      if(!raw) return false;
+      var s = JSON.parse(raw);
+      if(!s || typeof s !== 'object') return false;
+      if(s.lang === 'en' || s.lang === 'zh') lang = s.lang;
+      if(typeof s.start === 'string') startEl.value = s.start;
+      if(typeof s.totalH !== 'undefined') totalH.value = s.totalH;
+      if(typeof s.totalM !== 'undefined') totalM.value = s.totalM;
+      downList.innerHTML = '';
+      var downs = Array.isArray(s.downs) ? s.downs : [];
+      if(downs.length === 0) downs = [{ h: '', m: '' }];
+      downs.forEach(function(d){
+        addDowntime(d && d.h ? d.h : '', d && d.m ? d.m : '', false);
+      });
+      return true;
+    }catch(e){ return false; }
+  }
+
   var T = {
     en: {
       startLabel: 'Starting Date and Time',
@@ -560,6 +599,7 @@
   }
 
   function calculate(){
+    saveState();
     var total = readMins(totalH, totalM);
     var entries = downtimeEntries();
     var down  = entries.reduce(function(a,b){ return a+b.mins; }, 0);
@@ -689,7 +729,7 @@
     window.scrollTo({ top:0, behavior:'smooth' });
   });
 
-  setDefaults();
+  if(!loadState()) setDefaults();
   applyLanguage();
   calculate();
 })();
