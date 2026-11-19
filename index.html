@@ -92,11 +92,16 @@
   label.title{font-size:15px; font-weight:700; display:block}
   .hint{font-size:12.5px; color:var(--muted); margin-top:2px}
 
-  input[type="datetime-local"], input[type="number"]{
+  input[type="date"], input[type="text"], input[type="number"]{
     width:100%; background:var(--surface-2); border:1.5px solid var(--line);
     border-radius:8px; padding:10px 12px; font-size:16px; color:var(--text);
     font-family:inherit; outline:none;
   }
+  input.bad{border-color:#dc2626}
+  @media (prefers-color-scheme: dark){ input.bad{border-color:#f87171} }
+  .dt-row{display:flex; gap:8px}
+  .dt-row input[type="date"]{flex:1; min-width:0}
+  .dt-row input[type="text"]{flex:0 0 92px; width:92px; text-align:center; font-variant-numeric:tabular-nums}
   input:focus{border-color:var(--accent); background:var(--surface); box-shadow:0 0 0 4px var(--focus)}
   .start-row{display:grid; grid-template-columns:1fr auto; gap:8px}
   .machine-row{display:flex; gap:8px; margin-bottom:14px}
@@ -133,9 +138,14 @@
     padding:12px 14px 14px; margin-bottom:10px;
   }
   .downtime-entry-head{
-    display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;
+    display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; cursor:pointer;
   }
-  .downtime-entry-name{font-size:13px; font-weight:700; color:var(--text)}
+  .downtime-entry-name{font-size:13px; font-weight:700; color:var(--text); flex:1}
+  .down-chevron{color:var(--muted); font-size:18px; line-height:1; padding:0 2px}
+  .down-summary{display:none; font-size:13.5px; color:var(--muted); padding:2px 0; cursor:pointer}
+  .down-summary strong{color:var(--text)}
+  .downtime-entry.collapsed .down-body{display:none}
+  .downtime-entry.collapsed .down-summary{display:block}
   .downtime-entry-name span{color:var(--muted); font-weight:600}
   .btn-remove{
     border:1.5px solid var(--line); background:var(--surface); color:var(--muted);
@@ -248,7 +258,10 @@
         </div>
       </div>
       <div class="start-row">
-        <input type="datetime-local" id="startTime" />
+        <div class="dt-row">
+          <input type="date" id="startDate" />
+          <input type="text" id="startTime" inputmode="numeric" placeholder="HH:MM" maxlength="5" autocomplete="off" />
+        </div>
         <button type="button" class="btn btn-ghost" id="nowBtn">Now</button>
       </div>
     </div>
@@ -335,13 +348,17 @@
 
 <script>
 (function(){
-  var startEl = document.getElementById('startTime');
+  var startDateEl = document.getElementById('startDate');
+  var startTimeEl = document.getElementById('startTime');
   var machineSelect = document.getElementById('machineSelect');
   var machineRenameBtn = document.getElementById('machineRenameBtn');
   var machineDelBtn = document.getElementById('machineDelBtn');
   var totalH = document.getElementById('totalH');
   var totalM = document.getElementById('totalM');
   var downList = document.getElementById('downtimeList');
+
+  // The downtime entry currently open for editing; filled others collapse.
+  var openDownEntry = null;
 
   var lang = 'en';
 
@@ -385,20 +402,29 @@
   function readFormToMachine(){
     var m = activeMachine();
     if(!m) return;
-    m.start = startEl.value;
+    var s = dtISO(startDateEl, startTimeEl);
+    if(s !== null) m.start = s;
     m.totalH = totalH.value;
     m.totalM = totalM.value;
-    m.downs = entryEls().map(function(entry){
+    var oldDowns = Array.isArray(m.downs) ? m.downs : [];
+    m.downs = entryEls().map(function(entry, i){
+      var old = oldDowns[i] || {};
+      var f = dtISO(entry.querySelector('.down-from-date'), entry.querySelector('.down-from-time'));
+      var tt = dtISO(entry.querySelector('.down-to-date'), entry.querySelector('.down-to-time'));
       var d = {
-        from: entry.querySelector('.down-from').value,
-        to: entry.querySelector('.down-to').value
+        from: f === null ? (old.from || '') : f,
+        to: tt === null ? (old.to || '') : tt
       };
       if(entry.dataset.mins) d.mins = parseInt(entry.dataset.mins, 10);
       return d;
     });
   }
   function writeMachineToForm(m){
-    startEl.value = m.start || '';
+    openDownEntry = null;
+    var s = splitISO(m.start);
+    startDateEl.value = s.date;
+    startTimeEl.value = s.time;
+    startTimeEl.classList.remove('bad');
     totalH.value = m.totalH;
     totalM.value = m.totalM;
     downList.innerHTML = '';
@@ -528,6 +554,8 @@
       downInvalid: 'To must be after From',
       downFromAria: 'Downtime start',
       downToAria: 'Downtime end',
+      timeAria: 'Time, 24-hour format',
+      startDateAria: 'Start date',
       endLabel: 'End Date and Time',
       enterStart: 'Enter a start time',
       enterValid: 'Enter a valid start time',
@@ -570,6 +598,8 @@
       downInvalid: '结束时间必须晚于开始时间',
       downFromAria: '停机开始时间',
       downToAria: '停机结束时间',
+      timeAria: '时间，24小时制',
+      startDateAria: '开始日期',
       endLabel: '结束日期和时间',
       enterStart: '请输入开始时间',
       enterValid: '请输入有效的开始时间',
@@ -597,6 +627,57 @@
   function toLocalInputValue(d){
     return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
   }
+  // Split "YYYY-MM-DDTHH:MM" into date + 24h time parts.
+  function splitISO(iso){
+    if(!iso) return { date: '', time: '' };
+    var parts = String(iso).split('T');
+    return { date: parts[0] || '', time: (parts[1] || '').slice(0, 5) };
+  }
+  // Compose an ISO value from a date input + a typed 24h time input.
+  // Returns '' when nothing is entered, null when a time is typed but invalid.
+  function dtISO(dateEl, timeEl){
+    var date = dateEl.value;
+    if(!date) return '';
+    var raw = timeEl.value.trim();
+    if(raw === '') return '';
+    var norm = normalizeTimeText(raw);
+    return norm ? date + 'T' + norm : null;
+  }
+  function startValue(){
+    return dtISO(startDateEl, startTimeEl) || '';
+  }
+  // Accepts "20:53", "8:30", "2053", "830" -> "HH:MM", or null.
+  function normalizeTimeText(s){
+    s = (s || '').trim();
+    var m = s.match(/^(\d{1,2}):(\d{2})$/);
+    if(m){
+      var h = parseInt(m[1], 10), mi = parseInt(m[2], 10);
+      if(h <= 23 && mi <= 59) return pad(h) + ':' + pad(mi);
+      return null;
+    }
+    var digits = s.replace(/\D/g, '');
+    if(digits.length === 3 || digits.length === 4){
+      var hh = parseInt(digits.slice(0, digits.length - 2), 10);
+      var mm = parseInt(digits.slice(-2), 10);
+      if(hh <= 23 && mm <= 59) return pad(hh) + ':' + pad(mm);
+    }
+    return null;
+  }
+  // Typed 24h time field: normalizes on blur, red border when invalid.
+  function wireTimeInput(el, onChange){
+    el.addEventListener('input', function(){
+      el.classList.remove('bad');
+      onChange();
+    });
+    el.addEventListener('change', function(){
+      var raw = el.value.trim();
+      if(raw === ''){ el.classList.remove('bad'); onChange(); return; }
+      var norm = normalizeTimeText(raw);
+      if(norm){ el.value = norm; el.classList.remove('bad'); }
+      else el.classList.add('bad');
+      onChange();
+    });
+  }
   function readMins(hEl, mEl){
     var h = parseInt(hEl.value,10); if(isNaN(h)||h<0) h=0;
     var m = parseInt(mEl.value,10); if(isNaN(m)||m<0) m=0;
@@ -606,6 +687,18 @@
     var h = Math.floor(mins/60), m = mins%60;
     if(lang === 'zh') return h+'小时'+pad(m)+'分钟';
     return h+'h '+pad(m)+'m';
+  }
+  // Compact one-line range for a collapsed entry: "09/17 21:21 – 09/18 08:53".
+  function fmtRange(from, to){
+    function part(iso){
+      var p = splitISO(iso);
+      if(!p.date) return '';
+      var d = p.date.split('-');
+      return d[1] + '/' + d[2] + ' ' + (p.time || '--:--');
+    }
+    var a = part(from), b = part(to);
+    if(!a && !b) return '';
+    return a + ' – ' + b;
   }
   function shortTime(s){
     var d = new Date(s);
@@ -655,8 +748,8 @@
     totalM.value = (m === 0) ? '00' : m;
   }
   function isBlankEntry(entry){
-    var from = entry.querySelector('.down-from').value;
-    var to = entry.querySelector('.down-to').value;
+    var from = entry.querySelector('.down-from-date').value + entry.querySelector('.down-from-time').value;
+    var to = entry.querySelector('.down-to-date').value + entry.querySelector('.down-to-time').value;
     return from.trim() === '' && to.trim() === '' && !entry.dataset.mins;
   }
 
@@ -666,8 +759,8 @@
   // Duration in minutes: To minus From. Legacy entries saved as hours/minutes
   // keep their stored duration until both From and To are set.
   function entryMins(entry){
-    var from = entry.querySelector('.down-from').value;
-    var to = entry.querySelector('.down-to').value;
+    var from = dtISO(entry.querySelector('.down-from-date'), entry.querySelector('.down-from-time')) || '';
+    var to = dtISO(entry.querySelector('.down-to-date'), entry.querySelector('.down-to-time')) || '';
     if(from && to){
       var diff = Math.round((new Date(to) - new Date(from)) / 60000);
       return diff > 0 ? diff : 0;
@@ -675,8 +768,8 @@
     return parseInt(entry.dataset.mins || '0', 10) || 0;
   }
   function entryInvalid(entry){
-    var from = entry.querySelector('.down-from').value;
-    var to = entry.querySelector('.down-to').value;
+    var from = dtISO(entry.querySelector('.down-from-date'), entry.querySelector('.down-from-time')) || '';
+    var to = dtISO(entry.querySelector('.down-to-date'), entry.querySelector('.down-to-time')) || '';
     return from !== '' && to !== '' && new Date(to) <= new Date(from);
   }
   function downtimeEntries(){
@@ -684,8 +777,8 @@
       return {
         mins: entryMins(entry),
         filled: !isBlankEntry(entry) && entryMins(entry) > 0,
-        from: entry.querySelector('.down-from').value,
-        to: entry.querySelector('.down-to').value
+        from: dtISO(entry.querySelector('.down-from-date'), entry.querySelector('.down-from-time')) || '',
+        to: dtISO(entry.querySelector('.down-to-date'), entry.querySelector('.down-to-time')) || ''
       };
     });
   }
@@ -700,6 +793,19 @@
       if(durLabel) durLabel.textContent = t().duration + ':';
       var durVal = entry.querySelector('.down-duration strong');
       if(durVal) durVal.textContent = mins > 0 ? fmtDuration(mins) : '—';
+      var collapsed = mins > 0 && !entryInvalid(entry) && entry !== openDownEntry;
+      entry.classList.toggle('collapsed', collapsed);
+      var chev = entry.querySelector('.down-chevron');
+      if(chev) chev.textContent = collapsed ? '⌄' : '⌃';
+      var sumRng = entry.querySelector('.down-summary .rng');
+      if(sumRng){
+        var rng = fmtRange(
+          dtISO(entry.querySelector('.down-from-date'), entry.querySelector('.down-from-time')) || '',
+          dtISO(entry.querySelector('.down-to-date'), entry.querySelector('.down-to-time')) || '');
+        sumRng.textContent = rng ? rng + ' · ' : '';
+      }
+      var sumDur = entry.querySelector('.down-summary strong');
+      if(sumDur) sumDur.textContent = mins > 0 ? fmtDuration(mins) : '—';
       var rm = entry.querySelector('.btn-remove');
       rm.textContent = t().remove;
       rm.setAttribute('aria-label', t().removeAria);
@@ -708,10 +814,14 @@
       if(fromLabel) fromLabel.textContent = t().from;
       var toLabel = entry.querySelector('.down-field.to label');
       if(toLabel) toLabel.textContent = t().to;
-      var fromIn = entry.querySelector('.down-from');
+      var fromIn = entry.querySelector('.down-from-date');
       if(fromIn) fromIn.setAttribute('aria-label', t().downFromAria);
-      var toIn = entry.querySelector('.down-to');
+      var toIn = entry.querySelector('.down-to-date');
       if(toIn) toIn.setAttribute('aria-label', t().downToAria);
+      var fromTime = entry.querySelector('.down-from-time');
+      if(fromTime) fromTime.setAttribute('aria-label', t().timeAria);
+      var toTime = entry.querySelector('.down-to-time');
+      if(toTime) toTime.setAttribute('aria-label', t().timeAria);
       var err = entry.querySelector('.down-error');
       if(err){
         err.textContent = t().downInvalid;
@@ -732,40 +842,94 @@
     head.className = 'downtime-entry-head';
     var name = document.createElement('span');
     name.className = 'downtime-entry-name';
+    var chev = document.createElement('span');
+    chev.className = 'down-chevron';
+    chev.textContent = '⌃';
     var rm = document.createElement('button');
     rm.type = 'button';
     rm.className = 'btn btn-remove';
     rm.textContent = t().remove;
     rm.setAttribute('aria-label', t().removeAria);
     head.appendChild(name);
+    head.appendChild(chev);
     head.appendChild(rm);
     entry.appendChild(head);
+
+    // One-line summary shown when the entry is collapsed.
+    var sumLine = document.createElement('div');
+    sumLine.className = 'down-summary';
+    var sumRng = document.createElement('span');
+    sumRng.className = 'rng';
+    var sumDur = document.createElement('strong');
+    sumDur.className = 'num';
+    sumLine.appendChild(sumRng);
+    sumLine.appendChild(sumDur);
+    entry.appendChild(sumLine);
+
+    var body = document.createElement('div');
+    body.className = 'down-body';
+    entry.appendChild(body);
+
+    function toggleEntry(){
+      openDownEntry = (openDownEntry === entry) ? null : entry;
+      calculate();
+    }
+    head.addEventListener('click', toggleEntry);
+    sumLine.addEventListener('click', toggleEntry);
 
     var fromField = document.createElement('div');
     fromField.className = 'down-field from';
     var fromLabel = document.createElement('label');
     fromLabel.textContent = t().from;
-    var fromIn = document.createElement('input');
-    fromIn.type = 'datetime-local';
-    fromIn.className = 'down-from';
-    fromIn.value = d.from || '';
-    fromIn.setAttribute('aria-label', t().downFromAria);
+    var fromRow = document.createElement('div');
+    fromRow.className = 'dt-row';
+    var fromParts = splitISO(d.from);
+    var fromDate = document.createElement('input');
+    fromDate.type = 'date';
+    fromDate.className = 'down-from-date';
+    fromDate.value = fromParts.date;
+    fromDate.setAttribute('aria-label', t().downFromAria);
+    var fromTime = document.createElement('input');
+    fromTime.type = 'text';
+    fromTime.className = 'down-from-time';
+    fromTime.inputMode = 'numeric';
+    fromTime.placeholder = 'HH:MM';
+    fromTime.maxLength = 5;
+    fromTime.autocomplete = 'off';
+    fromTime.value = fromParts.time;
+    fromTime.setAttribute('aria-label', t().timeAria);
+    fromRow.appendChild(fromDate);
+    fromRow.appendChild(fromTime);
     fromField.appendChild(fromLabel);
-    fromField.appendChild(fromIn);
-    entry.appendChild(fromField);
+    fromField.appendChild(fromRow);
+    body.appendChild(fromField);
 
     var toField = document.createElement('div');
     toField.className = 'down-field to';
     var toLabel = document.createElement('label');
     toLabel.textContent = t().to;
-    var toIn = document.createElement('input');
-    toIn.type = 'datetime-local';
-    toIn.className = 'down-to';
-    toIn.value = d.to || '';
-    toIn.setAttribute('aria-label', t().downToAria);
+    var toRow = document.createElement('div');
+    toRow.className = 'dt-row';
+    var toParts = splitISO(d.to);
+    var toDate = document.createElement('input');
+    toDate.type = 'date';
+    toDate.className = 'down-to-date';
+    toDate.value = toParts.date;
+    toDate.setAttribute('aria-label', t().downToAria);
+    var toTime = document.createElement('input');
+    toTime.type = 'text';
+    toTime.className = 'down-to-time';
+    toTime.inputMode = 'numeric';
+    toTime.placeholder = 'HH:MM';
+    toTime.maxLength = 5;
+    toTime.autocomplete = 'off';
+    toTime.value = toParts.time;
+    toTime.setAttribute('aria-label', t().timeAria);
+    toRow.appendChild(toDate);
+    toRow.appendChild(toTime);
     toField.appendChild(toLabel);
-    toField.appendChild(toIn);
-    entry.appendChild(toField);
+    toField.appendChild(toRow);
+    body.appendChild(toField);
 
     var durLine = document.createElement('div');
     durLine.className = 'down-duration';
@@ -776,12 +940,12 @@
     durVal.textContent = '—';
     durLine.appendChild(durLabel);
     durLine.appendChild(durVal);
-    entry.appendChild(durLine);
+    body.appendChild(durLine);
 
     var err = document.createElement('div');
     err.className = 'down-error';
     err.textContent = t().downInvalid;
-    entry.appendChild(err);
+    body.appendChild(err);
 
     // Legacy entries saved as hours/minutes keep their duration until a
     // full From/To range replaces it.
@@ -791,22 +955,31 @@
       if(legacy > 0) entry.dataset.mins = legacy;
     }
 
-    [fromIn, toIn].forEach(function(el){
+    // A new blank entry opens for editing; filled ones collapse.
+    if(!d.from && !d.to && !entry.dataset.mins) openDownEntry = entry;
+
+    [fromDate, toDate].forEach(function(el){
       el.addEventListener('input', onDownChange);
       el.addEventListener('change', onDownChange);
     });
+    wireTimeInput(fromTime, onDownChange);
+    wireTimeInput(toTime, onDownChange);
     function onDownChange(){
-      if(fromIn.value && toIn.value) delete entry.dataset.mins;
+      var f = dtISO(fromDate, fromTime);
+      var tt = dtISO(toDate, toTime);
+      if(f && tt) delete entry.dataset.mins;
       calculate();
     }
-    rm.addEventListener('click', function(){
+    rm.addEventListener('click', function(e){
+      e.stopPropagation();
+      if(openDownEntry === entry) openDownEntry = null;
       entry.parentNode.removeChild(entry);
       calculate();
     });
 
     downList.appendChild(entry);
     refreshEntryLabels();
-    if(focusIt){ fromIn.focus(); }
+    if(focusIt){ fromDate.focus(); }
     return entry;
   }
 
@@ -861,6 +1034,8 @@
     machineDelBtn.setAttribute('aria-label', s.deleteMachine);
     totalH.setAttribute('aria-label', s.totalHoursAria);
     totalM.setAttribute('aria-label', s.totalMinutesAria);
+    startDateEl.setAttribute('aria-label', s.startDateAria);
+    startTimeEl.setAttribute('aria-label', s.timeAria);
     rebuildMachineSelect();
   }
 
@@ -885,13 +1060,14 @@
     var endDateEl = document.getElementById('endDate');
     var dayNote   = document.getElementById('dayNote');
 
-    if(!startEl.value){
+    var startVal = startValue();
+    if(!startVal){
       endTimeEl.textContent = '—';
       endDateEl.textContent = t().enterStart;
       dayNote.style.display = 'none';
       return null;
     }
-    var start = new Date(startEl.value);
+    var start = new Date(startVal);
     if(isNaN(start.getTime())){
       endTimeEl.textContent = '—';
       endDateEl.textContent = t().enterValid;
@@ -940,6 +1116,11 @@
   function machineNumbers(m){
     var total = (parseInt(m.totalH, 10) || 0) * 60 + (parseInt(m.totalM, 10) || 0);
     var down = (m.downs || []).reduce(function(a, d){
+      if(d.from && d.to){
+        var diff = Math.round((new Date(d.to) - new Date(d.from)) / 60000);
+        return a + (diff > 0 ? diff : 0);
+      }
+      if(d.mins) return a + (parseInt(d.mins, 10) || 0);
       return a + (parseInt(d.h, 10) || 0) * 60 + (parseInt(d.m, 10) || 0);
     }, 0);
     var start = m.start ? new Date(m.start) : null;
@@ -1003,8 +1184,9 @@
     el.addEventListener('input', calculate);
     el.addEventListener('change', function(){ normalizeTotalSoft(); calculate(); });
   });
-  startEl.addEventListener('input', calculate);
-  startEl.addEventListener('change', calculate);
+  startDateEl.addEventListener('input', calculate);
+  startDateEl.addEventListener('change', calculate);
+  wireTimeInput(startTimeEl, calculate);
 
   machineSelect.addEventListener('change', function(){
     var v = machineSelect.value;
@@ -1028,7 +1210,10 @@
 
   document.getElementById('nowBtn').addEventListener('click', function(){
     var now = new Date(); now.setSeconds(0,0);
-    startEl.value = toLocalInputValue(now);
+    var parts = splitISO(toLocalInputValue(now));
+    startDateEl.value = parts.date;
+    startTimeEl.value = parts.time;
+    startTimeEl.classList.remove('bad');
     calculate();
   });
 
