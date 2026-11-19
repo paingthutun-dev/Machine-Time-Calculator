@@ -89,7 +89,7 @@
   label.title{font-size:15px; font-weight:700; display:block}
   .hint{font-size:12.5px; color:var(--muted); margin-top:2px}
 
-  input[type="datetime-local"], input[type="number"], input[type="text"]{
+  input[type="datetime-local"], input[type="number"]{
     width:100%; background:var(--surface-2); border:1.5px solid var(--line);
     border-radius:8px; padding:10px 12px; font-size:16px; color:var(--text);
     font-family:inherit; outline:none;
@@ -103,11 +103,11 @@
     font-size:15px; font-weight:700; color:var(--text); font-family:inherit; outline:none;
   }
   .machine-row select:focus{border-color:var(--accent); background:var(--surface)}
-  .machine-del{
+  .machine-btn{
     flex:0 0 44px; height:44px; border:1.5px solid var(--line); background:var(--surface);
     color:var(--muted); border-radius:8px; font-size:16px; cursor:pointer; font-family:inherit;
   }
-  .machine-del:hover{border-color:var(--line-strong); color:var(--text)}
+  .machine-btn:hover{border-color:var(--line-strong); color:var(--text)}
   .btn{
     border:0; cursor:pointer; border-radius:8px; padding:10px 14px;
     font-family:inherit; font-weight:700; font-size:14px;
@@ -203,17 +203,8 @@
 
     <div class="machine-row">
       <select id="machineSelect" aria-label="Machine"></select>
-      <button type="button" class="machine-del" id="machineDelBtn" aria-label="Delete machine">🗑</button>
-    </div>
-
-    <div class="field">
-      <div class="field-head">
-        <div>
-          <label class="title" for="machineNo" id="machineLabel">Machine No.</label>
-          <div class="hint" id="machineHint">Which machine is this job for.</div>
-        </div>
-      </div>
-      <input type="text" id="machineNo" autocomplete="off" />
+      <button type="button" class="machine-btn" id="machineRenameBtn" aria-label="Rename machine">✏️</button>
+      <button type="button" class="machine-btn" id="machineDelBtn" aria-label="Delete machine">🗑</button>
     </div>
 
     <div class="field">
@@ -299,8 +290,8 @@
 <script>
 (function(){
   var startEl = document.getElementById('startTime');
-  var machineEl = document.getElementById('machineNo');
   var machineSelect = document.getElementById('machineSelect');
+  var machineRenameBtn = document.getElementById('machineRenameBtn');
   var machineDelBtn = document.getElementById('machineDelBtn');
   var totalH = document.getElementById('totalH');
   var totalM = document.getElementById('totalM');
@@ -348,7 +339,6 @@
   function readFormToMachine(){
     var m = activeMachine();
     if(!m) return;
-    m.name = machineEl.value;
     m.start = startEl.value;
     m.totalH = totalH.value;
     m.totalM = totalM.value;
@@ -358,7 +348,6 @@
     });
   }
   function writeMachineToForm(m){
-    machineEl.value = m.name || '';
     startEl.value = m.start || '';
     totalH.value = m.totalH;
     totalM.value = m.totalM;
@@ -394,15 +383,24 @@
     rebuildMachineSelect();
     calculate();
   }
-  function createMachine(){
+  function createMachine(name){
     saveState();
     var m = newMachine();
+    if(name) m.name = name;
     machines.push(m);
     activeMachineId = m.id;
     writeMachineToForm(m);
     rebuildMachineSelect();
     calculate();
-    machineEl.focus();
+  }
+  function renameMachine(){
+    var m = activeMachine();
+    if(!m) return;
+    var name = window.prompt(t().machineLabel, m.name || '');
+    if(name === null) return;
+    m.name = (name || '').trim();
+    rebuildMachineSelect();
+    calculate();
   }
   function deleteMachine(){
     if(machines.length <= 1) return;
@@ -459,8 +457,8 @@
   var T = {
     en: {
       machineLabel: 'Machine No.',
-      machineHint: 'Which machine is this job for.',
       addMachine: '＋ Add machine',
+      renameMachine: 'Rename machine',
       deleteMachine: 'Delete machine',
       deleteMachineConfirm: 'Delete this machine and all its data?',
       startLabel: 'Starting Date and Time',
@@ -497,8 +495,8 @@
     },
     zh: {
       machineLabel: '机器编号',
-      machineHint: '此作业使用的机器。',
       addMachine: '＋ 添加机器',
+      renameMachine: '重命名机器',
       deleteMachine: '删除机器',
       deleteMachineConfirm: '删除这台机器及其全部数据吗？',
       startLabel: '开始日期和时间',
@@ -729,8 +727,6 @@
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
     document.getElementById('langEn').setAttribute('aria-pressed', lang === 'en' ? 'true' : 'false');
     document.getElementById('langZh').setAttribute('aria-pressed', lang === 'zh' ? 'true' : 'false');
-    document.getElementById('machineLabel').textContent = s.machineLabel;
-    document.getElementById('machineHint').textContent = s.machineHint;
     document.getElementById('startLabel').textContent = s.startLabel;
     document.getElementById('startHint').textContent = s.startHint;
     document.getElementById('nowBtn').textContent = s.now;
@@ -749,6 +745,7 @@
     document.getElementById('copyBtn').textContent = s.copy;
     document.getElementById('resetBtn').textContent = s.reset;
     document.getElementById('footerNote').textContent = s.footer;
+    machineRenameBtn.setAttribute('aria-label', s.renameMachine);
     machineDelBtn.setAttribute('aria-label', s.deleteMachine);
     totalH.setAttribute('aria-label', s.totalHoursAria);
     totalM.setAttribute('aria-label', s.totalMinutesAria);
@@ -840,13 +837,17 @@
   });
   startEl.addEventListener('input', calculate);
   startEl.addEventListener('change', calculate);
-  machineEl.addEventListener('input', function(){ calculate(); rebuildMachineSelect(); });
 
   machineSelect.addEventListener('change', function(){
     var v = machineSelect.value;
-    if(v === '__add__') createMachine();
+    if(v === '__add__'){
+      var name = window.prompt(t().machineLabel);
+      if(name === null){ rebuildMachineSelect(); return; }
+      createMachine((name || '').trim());
+    }
     else switchMachine(v);
   });
+  machineRenameBtn.addEventListener('click', renameMachine);
   machineDelBtn.addEventListener('click', deleteMachine);
 
   document.getElementById('langEn').addEventListener('click', function(){ setLanguage('en'); });
