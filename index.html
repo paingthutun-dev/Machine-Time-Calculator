@@ -171,12 +171,28 @@
   .summary-row.sub span{opacity:.6}
   .summary-row.sub strong{font-weight:600}
   .actions{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px}
+  .summary-actions{grid-template-columns:1fr 1fr}
+  .sum-machine{
+    background:var(--surface-2); border:1px solid var(--line); border-radius:10px;
+    padding:12px 14px 6px; margin-bottom:12px;
+  }
+  .sum-machine-name{font-size:15px; font-weight:800; margin-bottom:4px}
+  .sum-date{font-size:13px; color:var(--muted); margin-bottom:12px}
+  @media print{
+    #summaryView{display:none !important}
+    body.showing-summary header,
+    body.showing-summary #inputCard,
+    body.showing-summary #resultCard,
+    body.showing-summary footer{display:none !important}
+    body.showing-summary #summaryView{display:block !important; box-shadow:none !important; border:1.5px solid #000 !important; background:#fff !important; color:#000 !important}
+    body.showing-summary #summaryView *{color:#000 !important}
+    body.showing-summary .sum-machine{background:#fff !important; border:1px solid #000 !important}
+    body.showing-summary .summary-actions{display:none !important}
+  }
   .btn-copy{background:#ffffff; color:#111827}
   @media (prefers-color-scheme: dark){ .btn-copy{background:#111827; color:#fff} }
   .btn-reset{background:transparent; border:1.5px solid rgba(255,255,255,.3); color:var(--result-text)}
   @media (prefers-color-scheme: dark){ .btn-reset{border-color:rgba(0,0,0,.28)} }
-  .copied{min-height:20px; text-align:center; font-size:13px; font-weight:700; margin-top:10px}
-
   footer{text-align:center; color:var(--muted); font-size:12.5px; padding-top:4px}
   @media(max-width:480px){
     .wrap{padding-top:20px}
@@ -199,7 +215,7 @@
     </div>
   </header>
 
-  <section class="card" aria-label="Inputs">
+  <section class="card" id="inputCard" aria-label="Inputs">
 
     <div class="machine-row">
       <select id="machineSelect" aria-label="Machine"></select>
@@ -258,7 +274,7 @@
 
   </section>
 
-  <section class="card result" aria-label="Result">
+  <section class="card result" id="resultCard" aria-label="Result">
     <div class="field-head">
       <div>
         <label class="title" id="endLabel">End Date and Time</label>
@@ -278,10 +294,23 @@
     </div>
 
     <div class="actions">
-      <button type="button" class="btn btn-copy" id="copyBtn">Copy result</button>
+      <button type="button" class="btn btn-reset" id="summaryBtn">🖨 Summary</button>
       <button type="button" class="btn btn-reset" id="resetBtn">Reset</button>
     </div>
-    <div class="copied" id="copiedMsg" aria-live="polite"></div>
+  </section>
+
+  <section class="card" id="summaryView" aria-label="Summary" style="display:none">
+    <div class="field-head">
+      <div>
+        <label class="title" id="summaryTitle">Summary</label>
+        <div class="sum-date" id="summaryDate"></div>
+      </div>
+    </div>
+    <div id="summaryList"></div>
+    <div class="actions summary-actions">
+      <button type="button" class="btn btn-copy" id="printBtn">🖨 Print</button>
+      <button type="button" class="btn btn-reset" id="summaryBackBtn">← Back</button>
+    </div>
   </section>
 
   <footer id="footerNote">If the end time passes midnight, the date moves to the next day automatically.</footer>
@@ -479,10 +508,10 @@
       totalDuration: 'Total duration',
       downtime: 'Downtime',
       end: 'End',
-      copy: 'Copy result',
       reset: 'Reset',
-      copied: 'Copied.',
-      copyNeedStart: 'Enter a start time first.',
+      summary: 'Summary',
+      printBtn: 'Print',
+      backBtn: 'Back',
       remove: 'Remove',
       removeAria: 'Remove this downtime entry',
       downtimeHoursAria: 'Downtime hours',
@@ -517,10 +546,10 @@
       totalDuration: '总时长',
       downtime: '停机',
       end: '结束',
-      copy: '复制结果',
       reset: '重置',
-      copied: '已复制。',
-      copyNeedStart: '请先输入开始时间。',
+      summary: '汇总',
+      printBtn: '打印',
+      backBtn: '返回',
       remove: '删除',
       removeAria: '删除此停机记录',
       downtimeHoursAria: '停机小时',
@@ -742,8 +771,12 @@
     document.getElementById('sumStartLabel').textContent = s.start;
     document.getElementById('sumTotalLabel').textContent = s.totalDuration;
     document.getElementById('sumEndLabel').textContent = s.end;
-    document.getElementById('copyBtn').textContent = s.copy;
     document.getElementById('resetBtn').textContent = s.reset;
+    document.getElementById('summaryBtn').textContent = '🖨 ' + s.summary;
+    document.getElementById('summaryTitle').textContent = s.summary;
+    document.getElementById('printBtn').textContent = '🖨 ' + s.printBtn;
+    document.getElementById('summaryBackBtn').textContent = '← ' + s.backBtn;
+    if(document.body.classList.contains('showing-summary')) renderSummary();
     document.getElementById('footerNote').textContent = s.footer;
     machineRenameBtn.setAttribute('aria-label', s.renameMachine);
     machineDelBtn.setAttribute('aria-label', s.deleteMachine);
@@ -755,7 +788,6 @@
   function setLanguage(newLang){
     if(newLang !== 'en' && newLang !== 'zh') return;
     lang = newLang;
-    document.getElementById('copiedMsg').textContent = '';
     applyLanguage();
     calculate();
   }
@@ -826,6 +858,63 @@
     return { start:start, total:total, down:down, entries:filled, end:end };
   }
 
+  function machineNumbers(m){
+    var total = (parseInt(m.totalH, 10) || 0) * 60 + (parseInt(m.totalM, 10) || 0);
+    var down = (m.downs || []).reduce(function(a, d){
+      return a + (parseInt(d.h, 10) || 0) * 60 + (parseInt(d.m, 10) || 0);
+    }, 0);
+    var start = m.start ? new Date(m.start) : null;
+    if(start && isNaN(start.getTime())) start = null;
+    var end = start ? new Date(start.getTime() + (total + down) * 60000) : null;
+    return { total: total, down: down, start: start, end: end };
+  }
+  function renderSummary(){
+    var list = document.getElementById('summaryList');
+    list.innerHTML = '';
+    var s = t();
+    machines.forEach(function(m, i){
+      var r = machineNumbers(m);
+      var block = document.createElement('div');
+      block.className = 'sum-machine';
+      var name = document.createElement('div');
+      name.className = 'sum-machine-name';
+      name.textContent = machineDisplayName(m, i);
+      block.appendChild(name);
+      var rows = [
+        [s.start, r.start ? fmtShort(r.start) : '—'],
+        [s.totalDuration, fmtDuration(r.total)],
+        [s.downtime, fmtDuration(r.down)],
+        [s.end, r.end ? fmtShort(r.end) : '—']
+      ];
+      rows.forEach(function(row){
+        var div = document.createElement('div');
+        div.className = 'summary-row';
+        var sp = document.createElement('span'); sp.textContent = row[0];
+        var v = document.createElement('strong'); v.className = 'num'; v.textContent = row[1];
+        div.appendChild(sp); div.appendChild(v);
+        block.appendChild(div);
+      });
+      list.appendChild(block);
+    });
+    document.getElementById('summaryDate').textContent = fmtDate(new Date());
+  }
+  function showSummary(){
+    saveState();
+    renderSummary();
+    document.getElementById('inputCard').style.display = 'none';
+    document.getElementById('resultCard').style.display = 'none';
+    document.getElementById('summaryView').style.display = '';
+    document.body.classList.add('showing-summary');
+    window.scrollTo({ top: 0 });
+  }
+  function showMain(){
+    document.getElementById('summaryView').style.display = 'none';
+    document.getElementById('inputCard').style.display = '';
+    document.getElementById('resultCard').style.display = '';
+    document.body.classList.remove('showing-summary');
+    window.scrollTo({ top: 0 });
+  }
+
   [totalH, totalM].forEach(function(el){
     el.addEventListener('focus', function(){
       var v = parseInt(el.value, 10);
@@ -864,45 +953,15 @@
     calculate();
   });
 
-  document.getElementById('copyBtn').addEventListener('click', function(){
-    var r = calculate();
-    var msg = document.getElementById('copiedMsg');
-    if(!r){ msg.textContent = t().copyNeedStart; return; }
-    var s = t();
-    var lines = ['Machine Time Calculator'];
-    lines.push(s.machineLabel + ': ' + machineDisplayName(activeMachine(), activeMachineIndex()));
-    lines.push(
-      s.start + ': ' + fmtShort(r.start),
-      s.totalDuration + ': ' + fmtDuration(r.total)
-    );
-    if(r.entries.length > 1){
-      r.entries.forEach(function(mins){
-        lines.push(s.downtime + ': ' + fmtDuration(mins));
-      });
-      lines.push(s.totalDowntime + ': ' + fmtDuration(r.down));
-    } else {
-      lines.push(s.downtime + ': ' + fmtDuration(r.down));
-    }
-    lines.push(s.end + ': ' + fmtShort(r.end));
-    var text = lines.join('\n');
-    function done(){ msg.textContent = s.copied; setTimeout(function(){ msg.textContent=''; }, 2400); }
-    function fail(){ msg.textContent = text; }
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(done).catch(fail);
-    } else {
-      var ta = document.createElement('textarea');
-      ta.value = text; document.body.appendChild(ta); ta.select();
-      try{ document.execCommand('copy'); done(); }catch(e){ fail(); }
-      document.body.removeChild(ta);
-    }
-  });
-
   document.getElementById('resetBtn').addEventListener('click', function(){
     resetCurrentMachine();
-    document.getElementById('copiedMsg').textContent = '';
     calculate();
     window.scrollTo({ top:0, behavior:'smooth' });
   });
+
+  document.getElementById('summaryBtn').addEventListener('click', showSummary);
+  document.getElementById('summaryBackBtn').addEventListener('click', showMain);
+  document.getElementById('printBtn').addEventListener('click', function(){ window.print(); });
 
   if(!loadState()) setDefaults();
   applyLanguage();
