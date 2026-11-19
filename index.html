@@ -154,6 +154,11 @@
     font-size:13.5px; color:var(--muted);
   }
   .downtime-total strong{color:var(--text); font-size:16px}
+  .down-field{margin-bottom:10px}
+  .down-field:last-of-type{margin-bottom:0}
+  .down-field label{display:block; font-size:12.5px; font-weight:700; color:var(--muted); margin-bottom:5px}
+  .down-error{color:#dc2626; font-size:12.5px; font-weight:700; margin-top:8px; display:none}
+  @media (prefers-color-scheme: dark){ .down-error{color:#f87171} }
 
   .result{background:var(--result-bg); color:var(--result-text); border-color:transparent}
   .result .field-head{margin-bottom:4px}
@@ -349,7 +354,7 @@
   }
   function defaultJob(){
     var s = new Date(); s.setHours(8,0,0,0);
-    return { start: toLocalInputValue(s), totalH: '8', totalM: '00', downs: [{ h: '', m: '' }] };
+    return { start: toLocalInputValue(s), totalH: '8', totalM: '00', downs: [{ from: '', to: '' }] };
   }
   function newMachine(){
     var job = defaultJob();
@@ -382,8 +387,12 @@
     m.totalH = totalH.value;
     m.totalM = totalM.value;
     m.downs = entryEls().map(function(entry){
-      var inputs = entry.querySelectorAll('input[type="number"]');
-      return { h: inputs[0].value, m: inputs[1].value };
+      var d = {
+        from: entry.querySelector('.down-from').value,
+        to: entry.querySelector('.down-to').value
+      };
+      if(entry.dataset.mins) d.mins = parseInt(entry.dataset.mins, 10);
+      return d;
     });
   }
   function writeMachineToForm(m){
@@ -392,9 +401,9 @@
     totalM.value = m.totalM;
     downList.innerHTML = '';
     var downs = Array.isArray(m.downs) ? m.downs : [];
-    if(downs.length === 0) downs = [{ h: '', m: '' }];
+    if(downs.length === 0) downs = [{ from: '', to: '' }];
     downs.forEach(function(d){
-      addDowntime(d && d.h ? d.h : '', d && d.m ? d.m : '', false);
+      addDowntime(d || { from: '', to: '' }, false);
     });
   }
 
@@ -509,8 +518,13 @@
       minutes: 'Minutes',
       totalCaption: 'Total:',
       downtimeLabel: 'Downtime Duration',
-      downtimeHint: 'Add one entry for each time the machine stopped. All entries are added together.',
+      downtimeHint: 'Add one entry for each stop, with its start and end time. All entries are added together.',
       addDowntime: '+ Add another downtime',
+      from: 'From',
+      to: 'To',
+      downInvalid: 'To must be after From',
+      downFromAria: 'Downtime start',
+      downToAria: 'Downtime end',
       endLabel: 'End Date and Time',
       enterStart: 'Enter a start time',
       enterValid: 'Enter a valid start time',
@@ -524,8 +538,6 @@
       backBtn: 'Back',
       remove: 'Remove',
       removeAria: 'Remove this downtime entry',
-      downtimeHoursAria: 'Downtime hours',
-      downtimeMinutesAria: 'Downtime minutes',
       totalHoursAria: 'Total duration hours',
       totalMinutesAria: 'Total duration minutes',
       footer: 'If the end time passes midnight, the date moves to the next day automatically.',
@@ -547,8 +559,13 @@
       minutes: '分钟',
       totalCaption: '总计：',
       downtimeLabel: '停机时长',
-      downtimeHint: '每次停机添加一条记录，所有记录将合计计算。',
+      downtimeHint: '每次停机添加一条记录，填写开始和结束时间，所有记录将合计计算。',
       addDowntime: '+ 添加另一次停机',
+      from: '开始',
+      to: '结束',
+      downInvalid: '结束时间必须晚于开始时间',
+      downFromAria: '停机开始时间',
+      downToAria: '停机结束时间',
       endLabel: '结束日期和时间',
       enterStart: '请输入开始时间',
       enterValid: '请输入有效的开始时间',
@@ -562,8 +579,6 @@
       backBtn: '返回',
       remove: '删除',
       removeAria: '删除此停机记录',
-      downtimeHoursAria: '停机小时',
-      downtimeMinutesAria: '停机分钟',
       totalHoursAria: '总时长（小时）',
       totalMinutesAria: '总时长（分钟）',
       footer: '如果结束时间超过午夜，日期将自动顺延至次日。',
@@ -587,6 +602,11 @@
     var h = Math.floor(mins/60), m = mins%60;
     if(lang === 'zh') return h+'小时'+pad(m)+'分钟';
     return h+'h '+pad(m)+'m';
+  }
+  function shortTime(s){
+    var d = new Date(s);
+    if(isNaN(d.getTime())) return '';
+    return pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
   function fmtTime(d){
     var h = d.getHours(), m = d.getMinutes();
@@ -639,20 +659,38 @@
     totalM.value = (m === 0) ? '00' : m;
   }
   function isBlankEntry(entry){
-    var inputs = entry.querySelectorAll('input[type="number"]');
-    return inputs[0].value.trim() === '' && inputs[1].value.trim() === '';
+    var from = entry.querySelector('.down-from').value;
+    var to = entry.querySelector('.down-to').value;
+    return from.trim() === '' && to.trim() === '' && !entry.dataset.mins;
   }
 
   function entryEls(){
     return Array.prototype.slice.call(downList.querySelectorAll('.downtime-entry'));
   }
+  // Duration in minutes: To minus From. Legacy entries saved as hours/minutes
+  // keep their stored duration until both From and To are set.
   function entryMins(entry){
-    var inputs = entry.querySelectorAll('input[type="number"]');
-    return readMins(inputs[0], inputs[1]);
+    var from = entry.querySelector('.down-from').value;
+    var to = entry.querySelector('.down-to').value;
+    if(from && to){
+      var diff = Math.round((new Date(to) - new Date(from)) / 60000);
+      return diff > 0 ? diff : 0;
+    }
+    return parseInt(entry.dataset.mins || '0', 10) || 0;
+  }
+  function entryInvalid(entry){
+    var from = entry.querySelector('.down-from').value;
+    var to = entry.querySelector('.down-to').value;
+    return from !== '' && to !== '' && new Date(to) <= new Date(from);
   }
   function downtimeEntries(){
     return entryEls().map(function(entry){
-      return { mins: entryMins(entry), filled: !isBlankEntry(entry) };
+      return {
+        mins: entryMins(entry),
+        filled: !isBlankEntry(entry) && entryMins(entry) > 0,
+        from: entry.querySelector('.down-from').value,
+        to: entry.querySelector('.down-to').value
+      };
     });
   }
 
@@ -660,29 +698,38 @@
     var entries = entryEls();
     entries.forEach(function(entry){
       var nameEl = entry.querySelector('.downtime-entry-name');
-      if(isBlankEntry(entry)){
-        nameEl.textContent = t().downtime;
-      } else {
+      var mins = entryMins(entry);
+      if(mins > 0){
         nameEl.innerHTML =
-          t().downtime + ' <span>· ' + fmtDuration(entryMins(entry)) + '</span>';
+          t().downtime + ' <span>· ' + fmtDuration(mins) + '</span>';
+      } else {
+        nameEl.textContent = t().downtime;
       }
       var rm = entry.querySelector('.btn-remove');
       rm.textContent = t().remove;
       rm.setAttribute('aria-label', t().removeAria);
       rm.style.display = entries.length > 1 ? '' : 'none';
-      var smalls = entry.querySelectorAll('.duration small');
-      if(smalls[0]) smalls[0].textContent = t().hours;
-      if(smalls[1]) smalls[1].textContent = t().minutes;
-      var inputs = entry.querySelectorAll('input[type="number"]');
-      if(inputs[0]) inputs[0].setAttribute('aria-label', t().downtimeHoursAria);
-      if(inputs[1]) inputs[1].setAttribute('aria-label', t().downtimeMinutesAria);
+      var fromLabel = entry.querySelector('.down-field.from label');
+      if(fromLabel) fromLabel.textContent = t().from;
+      var toLabel = entry.querySelector('.down-field.to label');
+      if(toLabel) toLabel.textContent = t().to;
+      var fromIn = entry.querySelector('.down-from');
+      if(fromIn) fromIn.setAttribute('aria-label', t().downFromAria);
+      var toIn = entry.querySelector('.down-to');
+      if(toIn) toIn.setAttribute('aria-label', t().downToAria);
+      var err = entry.querySelector('.down-error');
+      if(err){
+        err.textContent = t().downInvalid;
+        err.style.display = entryInvalid(entry) ? 'block' : 'none';
+      }
     });
-    var n = entries.filter(function(e){ return !isBlankEntry(e); }).length;
+    var n = entries.filter(function(e){ return !isBlankEntry(e) && entryMins(e) > 0; }).length;
     document.getElementById('downCount').textContent =
       t().totalDowntime + ' · ' + stopText(n);
   }
 
-  function addDowntime(hVal, mVal, focusIt){
+  function addDowntime(d, focusIt){
+    d = d || { from: '', to: '' };
     var entry = document.createElement('div');
     entry.className = 'downtime-entry';
 
@@ -699,37 +746,53 @@
     head.appendChild(rm);
     entry.appendChild(head);
 
-    var dur = document.createElement('div');
-    dur.className = 'duration';
-    var hWrap = document.createElement('div');
-    var hIn = document.createElement('input');
-    hIn.type = 'number'; hIn.min = '0'; hIn.max = '999'; hIn.setAttribute('inputmode','numeric');
-    hIn.value = hVal ? hVal : '';
-    var hSmall = document.createElement('small'); hSmall.textContent = t().hours;
-    hWrap.appendChild(hIn); hWrap.appendChild(hSmall);
-    var colon = document.createElement('div');
-    colon.className = 'colon'; colon.textContent = ':';
-    var mWrap = document.createElement('div');
-    var mIn = document.createElement('input');
-    mIn.type = 'number'; mIn.min = '0'; mIn.max = '59'; mIn.setAttribute('inputmode','numeric');
-    mIn.value = mVal ? mVal : '';
-    var mSmall = document.createElement('small'); mSmall.textContent = t().minutes;
-    mWrap.appendChild(mIn); mWrap.appendChild(mSmall);
-    dur.appendChild(hWrap); dur.appendChild(colon); dur.appendChild(mWrap);
-    entry.appendChild(dur);
+    var fromField = document.createElement('div');
+    fromField.className = 'down-field from';
+    var fromLabel = document.createElement('label');
+    fromLabel.textContent = t().from;
+    var fromIn = document.createElement('input');
+    fromIn.type = 'datetime-local';
+    fromIn.className = 'down-from';
+    fromIn.value = d.from || '';
+    fromIn.setAttribute('aria-label', t().downFromAria);
+    fromField.appendChild(fromLabel);
+    fromField.appendChild(fromIn);
+    entry.appendChild(fromField);
 
-    hIn.setAttribute('aria-label', t().downtimeHoursAria);
-    mIn.setAttribute('aria-label', t().downtimeMinutesAria);
+    var toField = document.createElement('div');
+    toField.className = 'down-field to';
+    var toLabel = document.createElement('label');
+    toLabel.textContent = t().to;
+    var toIn = document.createElement('input');
+    toIn.type = 'datetime-local';
+    toIn.className = 'down-to';
+    toIn.value = d.to || '';
+    toIn.setAttribute('aria-label', t().downToAria);
+    toField.appendChild(toLabel);
+    toField.appendChild(toIn);
+    entry.appendChild(toField);
 
-    [hIn, mIn].forEach(function(el){
-      el.addEventListener('focus', function(){
-        var v = parseInt(el.value, 10);
-        if(isNaN(v) || v === 0){ el.value = ''; }
-        else { el.select(); }
-      });
-      el.addEventListener('input', calculate);
-      el.addEventListener('change', function(){ normalizeSoft(hIn, mIn); calculate(); });
+    var err = document.createElement('div');
+    err.className = 'down-error';
+    err.textContent = t().downInvalid;
+    entry.appendChild(err);
+
+    // Legacy entries saved as hours/minutes keep their duration until a
+    // full From/To range replaces it.
+    if(d.mins) entry.dataset.mins = d.mins;
+    else if(d.h !== undefined || d.m !== undefined){
+      var legacy = (parseInt(d.h, 10) || 0) * 60 + (parseInt(d.m, 10) || 0);
+      if(legacy > 0) entry.dataset.mins = legacy;
+    }
+
+    [fromIn, toIn].forEach(function(el){
+      el.addEventListener('input', onDownChange);
+      el.addEventListener('change', onDownChange);
     });
+    function onDownChange(){
+      if(fromIn.value && toIn.value) delete entry.dataset.mins;
+      calculate();
+    }
     rm.addEventListener('click', function(){
       entry.parentNode.removeChild(entry);
       calculate();
@@ -737,7 +800,7 @@
 
     downList.appendChild(entry);
     refreshEntryLabels();
-    if(focusIt){ hIn.focus(); hIn.select(); }
+    if(focusIt){ fromIn.focus(); }
     return entry;
   }
 
@@ -807,8 +870,7 @@
     var total = readMins(totalH, totalM);
     var entries = downtimeEntries();
     var down  = entries.reduce(function(a,b){ return a+b.mins; }, 0);
-    var filled = entries.filter(function(e){ return e.filled; })
-                        .map(function(e){ return e.mins; });
+    var filled = entries.filter(function(e){ return e.filled; });
     document.getElementById('totalText').textContent = fmtDuration(total);
     document.getElementById('downText').textContent  = fmtDuration(down);
     refreshEntryLabels();
@@ -855,11 +917,12 @@
     var list = document.getElementById('sumDownList');
     list.innerHTML = '';
     if(filled.length > 1){
-      filled.forEach(function(mins){
+      filled.forEach(function(e){
         var row = document.createElement('div');
         row.className = 'summary-row sub';
-        var sp = document.createElement('span'); sp.textContent = t().downtime;
-        var v = document.createElement('strong'); v.className = 'num'; v.textContent = fmtDuration(mins);
+        var sp = document.createElement('span');
+        sp.textContent = (e.from && e.to) ? shortTime(e.from) + ' – ' + shortTime(e.to) : t().downtime;
+        var v = document.createElement('strong'); v.className = 'num'; v.textContent = fmtDuration(e.mins);
         row.appendChild(sp); row.appendChild(v);
         list.appendChild(row);
       });
@@ -953,7 +1016,7 @@
   document.getElementById('langZh').addEventListener('click', function(){ setLanguage('zh'); });
 
   document.getElementById('addDownBtn').addEventListener('click', function(){
-    addDowntime(0, 0, true);
+    addDowntime({ from: '', to: '' }, true);
     calculate();
   });
 
