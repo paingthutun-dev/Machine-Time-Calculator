@@ -146,6 +146,20 @@
   .down-summary strong{color:var(--text)}
   .downtime-entry.collapsed .down-body{display:none}
   .downtime-entry.collapsed .down-summary{display:block}
+  .downtime-box{
+    width:100%; display:flex; align-items:center; gap:12px; text-align:left;
+    background:var(--surface-2); border:1.5px solid var(--line); border-radius:10px;
+    padding:14px; cursor:pointer; font-family:inherit; color:var(--text);
+  }
+  .downtime-box:active{transform:scale(.99)}
+  .downtime-box-text{flex:1; min-width:0}
+  .downtime-box-title, .downtime-box-hint, .downtime-box-count, .downtime-box-total{display:block}
+  .downtime-box-title{font-size:15px; font-weight:700}
+  .downtime-box-hint{font-size:12.5px; color:var(--muted); margin-top:2px}
+  .downtime-box-nums{text-align:right}
+  .downtime-box-count{font-size:12.5px; color:var(--muted)}
+  .downtime-box-total{font-size:19px; font-weight:800}
+  .downtime-box-chev{color:var(--muted); font-size:20px; line-height:1}
   .downtime-entry-name span{color:var(--muted); font-weight:600}
   .btn-remove{
     border:1.5px solid var(--line); background:var(--surface); color:var(--muted);
@@ -173,6 +187,7 @@
   .down-duration strong{color:var(--text); font-size:15px}
 
   .result{background:var(--result-bg); color:var(--result-text); border-color:transparent}
+  .result-machine{font-size:15px; font-weight:800; margin-bottom:4px}
   .result .field-head{margin-bottom:4px}
   .result label.title{color:var(--result-text)}
   .end-time{font-size:38px; font-weight:800; line-height:1.1; letter-spacing:-.02em; margin:10px 0 2px}
@@ -191,26 +206,13 @@
   .summary-row.sub span{opacity:.6}
   .summary-row.sub strong{font-weight:600}
   .actions{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px}
-  .summary-actions{grid-template-columns:1fr 1fr}
-  .sum-machine{
-    background:var(--surface-2); border:1px solid var(--line); border-radius:10px;
-    padding:12px 14px 6px; margin-bottom:12px;
-  }
-  .sum-machine-name{font-size:15px; font-weight:800; margin-bottom:4px}
-  .sum-date{font-size:13px; color:var(--muted); margin-bottom:12px}
   @media print{
-    #summaryView{display:none !important}
-    body.showing-summary header,
-    body.showing-summary #inputCard,
-    body.showing-summary #resultCard,
-    body.showing-summary footer{display:none !important}
-    body.showing-summary #summaryView{display:block !important; box-shadow:none !important; border:1.5px solid #000 !important; background:#fff !important; color:#000 !important}
-    body.showing-summary #summaryView *{color:#000 !important}
-    body.showing-summary .sum-machine{background:#fff !important; border:1px solid #000 !important}
-    body.showing-summary .summary-actions{display:none !important}
+    header, #inputCard, #downtimeView, footer, .actions{display:none !important}
+    #resultCard{display:block !important; box-shadow:none !important; border:1.5px solid #000 !important; background:#fff !important; color:#000 !important}
+    #resultCard *{color:#000 !important}
+    #resultCard .field-head, #resultCard .end-time, #resultCard .end-date, #resultCard .day-note{display:none !important}
+    #resultCard .summary{border-top:none !important; margin-top:0 !important; padding-top:0 !important}
   }
-  .btn-copy{background:#ffffff; color:#111827}
-  @media (prefers-color-scheme: dark){ .btn-copy{background:#111827; color:#fff} }
   .btn-reset{background:transparent; border:1.5px solid rgba(255,255,255,.3); color:var(--result-text)}
   @media (prefers-color-scheme: dark){ .btn-reset{border-color:rgba(0,0,0,.28)} }
   footer{text-align:center; color:var(--muted); font-size:12.5px; padding-top:4px}
@@ -226,7 +228,7 @@
   @media(min-width:660px){ .wrap{max-width:720px} }
   @media(min-width:900px){
     .wrap{max-width:1060px; display:grid; grid-template-columns:1fr 1fr; gap:0 20px; align-items:start}
-    .wrap header, .wrap footer, #summaryView{grid-column:1 / -1}
+    .wrap header, .wrap footer, #downtimeView{grid-column:1 / -1}
     #resultCard{position:sticky; top:28px}
   }
 </style>
@@ -288,18 +290,17 @@
     </div>
 
     <div class="field">
-      <div class="field-head">
-        <div>
-          <label class="title" id="downtimeLabel">Downtime Duration</label>
-          <div class="hint" id="downtimeHint">Add one entry for each time the machine stopped. All entries are added together.</div>
-        </div>
-      </div>
-      <div id="downtimeList"></div>
-      <button type="button" class="btn btn-add" id="addDownBtn">+ Add another downtime</button>
-      <div class="downtime-total">
-        <span id="downCount">Total downtime · 1 stop</span>
-        <strong class="num" id="downText">0h 00m</strong>
-      </div>
+      <button type="button" class="downtime-box" id="downtimeBox">
+        <span class="downtime-box-text">
+          <span class="downtime-box-title" id="downtimeBoxLabel">Downtime Duration</span>
+          <span class="downtime-box-hint" id="downtimeBoxHint">Tap to edit</span>
+        </span>
+        <span class="downtime-box-nums">
+          <span class="downtime-box-count" id="downtimeBoxCount">0 stops</span>
+          <span class="downtime-box-total num" id="downtimeBoxTotal">0h 00m</span>
+        </span>
+        <span class="downtime-box-chev">›</span>
+      </button>
     </div>
 
   </section>
@@ -316,6 +317,7 @@
     <span class="day-note" id="dayNote"></span>
 
     <div class="summary">
+      <div class="result-machine" id="resultMachine">Machine 1</div>
       <div class="summary-row"><span id="sumStartLabel">Start</span><strong class="num" id="sumStart">—</strong></div>
       <div class="summary-row"><span id="sumTotalLabel">Total duration</span><strong class="num" id="sumTotal">—</strong></div>
       <div class="summary-row"><span id="sumDownLabel">Downtime</span><strong class="num" id="sumDown">—</strong></div>
@@ -324,22 +326,26 @@
     </div>
 
     <div class="actions">
-      <button type="button" class="btn btn-reset" id="summaryBtn">🖨 Summary</button>
+      <button type="button" class="btn btn-reset" id="printBtn">🖨 Print</button>
       <button type="button" class="btn btn-reset" id="resetBtn">Reset</button>
     </div>
   </section>
 
-  <section class="card" id="summaryView" aria-label="Summary" style="display:none">
+  <section class="card" id="downtimeView" aria-label="Downtime" style="display:none">
     <div class="field-head">
       <div>
-        <label class="title" id="summaryTitle">Summary</label>
-        <div class="sum-date" id="summaryDate"></div>
+        <label class="title" id="downtimeLabel">Downtime Duration</label>
+        <div class="hint" id="downtimeHint">Add one entry for each time the machine stopped. All entries are added together.</div>
       </div>
     </div>
-    <div id="summaryList"></div>
-    <div class="actions summary-actions">
-      <button type="button" class="btn btn-copy" id="printBtn">🖨 Print</button>
-      <button type="button" class="btn btn-ghost" id="summaryBackBtn">← Back</button>
+    <div id="downtimeList"></div>
+    <button type="button" class="btn btn-add" id="addDownBtn">+ Add another downtime</button>
+    <div class="downtime-total">
+      <span id="downCount">Total downtime · 1 stop</span>
+      <strong class="num" id="downText">0h 00m</strong>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn btn-ghost" id="downtimeBackBtn">← Back</button>
     </div>
   </section>
 
@@ -551,6 +557,7 @@
       from: 'From',
       to: 'To',
       duration: 'Duration',
+      tapToEdit: 'Tap to edit',
       downInvalid: 'To must be after From',
       downFromAria: 'Downtime start',
       downToAria: 'Downtime end',
@@ -564,7 +571,6 @@
       downtime: 'Downtime',
       end: 'End',
       reset: 'Reset',
-      summary: 'Summary',
       printBtn: 'Print',
       backBtn: 'Back',
       remove: 'Remove',
@@ -595,6 +601,7 @@
       from: '开始',
       to: '结束',
       duration: '时长',
+      tapToEdit: '点击编辑',
       downInvalid: '结束时间必须晚于开始时间',
       downFromAria: '停机开始时间',
       downToAria: '停机结束时间',
@@ -608,7 +615,6 @@
       downtime: '停机',
       end: '结束',
       reset: '重置',
-      summary: '汇总',
       printBtn: '打印',
       backBtn: '返回',
       remove: '删除',
@@ -831,6 +837,9 @@
     var n = entries.filter(function(e){ return !isBlankEntry(e) && entryMins(e) > 0; }).length;
     document.getElementById('downCount').textContent =
       t().totalDowntime + ' · ' + stopText(n);
+    var downTotal = entries.reduce(function(a, e){ return a + entryMins(e); }, 0);
+    document.getElementById('downtimeBoxCount').textContent = stopText(n);
+    document.getElementById('downtimeBoxTotal').textContent = fmtDuration(downTotal);
   }
 
   function addDowntime(d, focusIt){
@@ -1018,17 +1027,16 @@
     document.getElementById('totalCaption').textContent = s.totalCaption;
     document.getElementById('downtimeLabel').textContent = s.downtimeLabel;
     document.getElementById('downtimeHint').textContent = s.downtimeHint;
+    document.getElementById('downtimeBoxLabel').textContent = s.downtimeLabel;
+    document.getElementById('downtimeBoxHint').textContent = s.tapToEdit;
+    document.getElementById('downtimeBackBtn').textContent = '← ' + s.backBtn;
     document.getElementById('addDownBtn').textContent = s.addDowntime;
     document.getElementById('endLabel').textContent = s.endLabel;
     document.getElementById('sumStartLabel').textContent = s.start;
     document.getElementById('sumTotalLabel').textContent = s.totalDuration;
     document.getElementById('sumEndLabel').textContent = s.end;
     document.getElementById('resetBtn').textContent = s.reset;
-    document.getElementById('summaryBtn').textContent = '🖨 ' + s.summary;
-    document.getElementById('summaryTitle').textContent = s.summary;
     document.getElementById('printBtn').textContent = '🖨 ' + s.printBtn;
-    document.getElementById('summaryBackBtn').textContent = '← ' + s.backBtn;
-    if(document.body.classList.contains('showing-summary')) renderSummary();
     document.getElementById('footerNote').textContent = s.footer;
     machineRenameBtn.setAttribute('aria-label', s.renameMachine);
     machineDelBtn.setAttribute('aria-label', s.deleteMachine);
@@ -1054,6 +1062,8 @@
     var filled = entries.filter(function(e){ return e.filled; });
     document.getElementById('totalText').textContent = fmtDuration(total);
     document.getElementById('downText').textContent  = fmtDuration(down);
+    document.getElementById('resultMachine').textContent =
+      machineDisplayName(activeMachine(), activeMachineIndex());
     refreshEntryLabels();
 
     var endTimeEl = document.getElementById('endTime');
@@ -1113,65 +1123,21 @@
     return { start:start, total:total, down:down, entries:filled, end:end };
   }
 
-  function machineNumbers(m){
-    var total = (parseInt(m.totalH, 10) || 0) * 60 + (parseInt(m.totalM, 10) || 0);
-    var down = (m.downs || []).reduce(function(a, d){
-      if(d.from && d.to){
-        var diff = Math.round((new Date(d.to) - new Date(d.from)) / 60000);
-        return a + (diff > 0 ? diff : 0);
-      }
-      if(d.mins) return a + (parseInt(d.mins, 10) || 0);
-      return a + (parseInt(d.h, 10) || 0) * 60 + (parseInt(d.m, 10) || 0);
-    }, 0);
-    var start = m.start ? new Date(m.start) : null;
-    if(start && isNaN(start.getTime())) start = null;
-    var end = start ? new Date(start.getTime() + (total + down) * 60000) : null;
-    return { total: total, down: down, start: start, end: end };
-  }
-  function renderSummary(){
-    var list = document.getElementById('summaryList');
-    list.innerHTML = '';
-    var s = t();
-    machines.forEach(function(m, i){
-      var r = machineNumbers(m);
-      var block = document.createElement('div');
-      block.className = 'sum-machine';
-      var name = document.createElement('div');
-      name.className = 'sum-machine-name';
-      name.textContent = machineDisplayName(m, i);
-      block.appendChild(name);
-      var rows = [
-        [s.start, r.start ? fmtShort(r.start) : '—'],
-        [s.totalDuration, fmtDuration(r.total)],
-        [s.downtime, fmtDuration(r.down)],
-        [s.end, r.end ? fmtShort(r.end) : '—']
-      ];
-      rows.forEach(function(row){
-        var div = document.createElement('div');
-        div.className = 'summary-row';
-        var sp = document.createElement('span'); sp.textContent = row[0];
-        var v = document.createElement('strong'); v.className = 'num'; v.textContent = row[1];
-        div.appendChild(sp); div.appendChild(v);
-        block.appendChild(div);
-      });
-      list.appendChild(block);
-    });
-    document.getElementById('summaryDate').textContent = fmtDate(new Date());
-  }
-  function showSummary(){
+  function showDowntime(){
     saveState();
-    renderSummary();
     document.getElementById('inputCard').style.display = 'none';
     document.getElementById('resultCard').style.display = 'none';
-    document.getElementById('summaryView').style.display = '';
-    document.body.classList.add('showing-summary');
+    document.getElementById('downtimeView').style.display = '';
     window.scrollTo({ top: 0 });
   }
-  function showMain(){
-    document.getElementById('summaryView').style.display = 'none';
+  function showMainFromDowntime(){
+    document.getElementById('downtimeView').style.display = 'none';
     document.getElementById('inputCard').style.display = '';
     document.getElementById('resultCard').style.display = '';
-    document.body.classList.remove('showing-summary');
+    // Leaving the editor closes the open entry, so filled entries
+    // show collapsed the next time the editor opens.
+    openDownEntry = null;
+    calculate();
     window.scrollTo({ top: 0 });
   }
 
@@ -1223,8 +1189,8 @@
     window.scrollTo({ top:0, behavior:'smooth' });
   });
 
-  document.getElementById('summaryBtn').addEventListener('click', showSummary);
-  document.getElementById('summaryBackBtn').addEventListener('click', showMain);
+  document.getElementById('downtimeBox').addEventListener('click', showDowntime);
+  document.getElementById('downtimeBackBtn').addEventListener('click', showMainFromDowntime);
   document.getElementById('printBtn').addEventListener('click', function(){ window.print(); });
 
   if(!loadState()) setDefaults();
