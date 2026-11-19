@@ -21,8 +21,8 @@
     --accent:#b45309;
     --accent-hover:#92400e;
     --accent-soft:#fef3c7;
-    --result-bg:#111827;
-    --result-text:#ffffff;
+    --result-bg:#f59e0b;
+    --result-text:#111827;
     --focus:rgba(180,83,9,.18);
     --shadow:0 1px 2px rgba(17,24,39,.05), 0 8px 24px rgba(17,24,39,.06);
   }
@@ -38,8 +38,6 @@
       --accent:#f59e0b;
       --accent-hover:#fbbf24;
       --accent-soft:#2b1f08;
-      --result-bg:#f59e0b;
-      --result-text:#111827;
       --focus:rgba(245,158,11,.22);
       --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
     }
@@ -194,12 +192,11 @@
   .end-date{font-size:15px; font-weight:600; opacity:.9}
   .day-note{
     display:none; margin-top:10px; font-size:12.5px; font-weight:700;
-    background:rgba(255,255,255,.16); padding:5px 10px; border-radius:999px;
+    background:rgba(0,0,0,.14); padding:5px 10px; border-radius:999px;
   }
-  @media (prefers-color-scheme: dark){ .day-note{background:rgba(0,0,0,.14)} }
-  .summary{margin-top:16px; border-top:1px solid rgba(255,255,255,.16); padding-top:6px}
-  @media (prefers-color-scheme: dark){ .summary{border-color:rgba(0,0,0,.16)} }
-  .summary-row{display:flex; justify-content:space-between; gap:14px; padding:7px 0; font-size:13.5px}
+  .summary{margin-top:16px; border-top:1px solid rgba(0,0,0,.16); padding-top:6px}
+  .summary-row{display:flex; justify-content:space-between; gap:14px; padding:7px 0; font-size:13.5px; border-top:1px solid rgba(0,0,0,.10)}
+  #resultMachine + .summary-row{border-top:none}
   .summary-row span{opacity:.75}
   .summary-row strong{font-weight:700; text-align:right}
   .summary-row.sub{padding:3px 0 3px 14px; font-size:12.5px}
@@ -213,8 +210,7 @@
     #resultCard .field-head, #resultCard .end-time, #resultCard .end-date, #resultCard .day-note{display:none !important}
     #resultCard .summary{border-top:none !important; margin-top:0 !important; padding-top:0 !important}
   }
-  .btn-reset{background:transparent; border:1.5px solid rgba(255,255,255,.3); color:var(--result-text)}
-  @media (prefers-color-scheme: dark){ .btn-reset{border-color:rgba(0,0,0,.28)} }
+  .btn-reset{background:transparent; border:1.5px solid rgba(0,0,0,.28); color:var(--result-text)}
   footer{text-align:center; color:var(--muted); font-size:12.5px; padding-top:4px}
   @media(max-width:480px){
     .wrap{padding-top:20px}
