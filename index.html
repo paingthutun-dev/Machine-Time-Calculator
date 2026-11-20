@@ -209,6 +209,7 @@
   .summary-row.sub span{opacity:.6}
   .summary-row.sub strong{font-weight:600}
   .actions{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px}
+  #resultCard .actions{grid-template-columns:1fr 1fr 1fr}
   @media print{
     header, #inputCard, #downtimeView, footer, .actions{display:none !important}
     #resultCard{display:block !important; box-shadow:none !important; border:1.5px solid #000 !important; background:#fff !important; color:#000 !important}
@@ -329,6 +330,7 @@
     </div>
 
     <div class="actions">
+      <button type="button" class="btn btn-reset" id="imageBtn">🖼 Save image</button>
       <button type="button" class="btn btn-reset" id="printBtn">🖨 Print</button>
       <button type="button" class="btn btn-reset" id="resetBtn">Reset</button>
     </div>
@@ -579,6 +581,7 @@
       end: 'End',
       reset: 'Reset',
       printBtn: 'Print',
+      imageBtn: 'Save image',
       backBtn: 'Back',
       remove: 'Remove',
       removeAria: 'Remove this downtime entry',
@@ -624,6 +627,7 @@
       end: '结束',
       reset: '重置',
       printBtn: '打印',
+      imageBtn: '保存图片',
       backBtn: '返回',
       remove: '删除',
       removeAria: '删除此停机记录',
@@ -1046,6 +1050,7 @@
     document.getElementById('sumEndLabel').textContent = s.end;
     document.getElementById('resetBtn').textContent = s.reset;
     document.getElementById('printBtn').textContent = '🖨 ' + s.printBtn;
+    document.getElementById('imageBtn').textContent = '🖼 ' + s.imageBtn;
     document.getElementById('footerNote').textContent = s.footer;
     machineRenameBtn.setAttribute('aria-label', s.renameMachine);
     machineDelBtn.setAttribute('aria-label', s.deleteMachine);
@@ -1153,6 +1158,91 @@
     window.scrollTo({ top: 0 });
   }
 
+  function exportImage(){
+    var m = activeMachine();
+    var name = machineDisplayName(m, activeMachineIndex());
+    var model = (m && (m.model || '').trim()) ? m.model.trim() : '';
+    function txt(id){ var el = document.getElementById(id); return el ? el.textContent : ''; }
+    var items = [];
+    items.push({ label: txt('sumStartLabel'), value: txt('sumStart') });
+    items.push({ label: txt('sumTotalLabel'), value: txt('sumTotal') });
+    items.push({ label: txt('sumDownLabel'), value: txt('sumDown') });
+    Array.prototype.forEach.call(document.querySelectorAll('#sumDownList .summary-row.sub'), function(r){
+      var sp = r.querySelector('span'), st = r.querySelector('strong');
+      items.push({ sub: true, label: sp ? sp.textContent : '', value: st ? st.textContent : '' });
+    });
+    items.push({ label: txt('sumEndLabel'), value: txt('sumEnd') });
+
+    var S = 2, W = 1100, margin = 24, padX = 48, padTop = 40, padBottom = 36;
+    var headerH = 56, rowH = 62, subH = 50;
+    var contentW = W - margin * 2 - padX * 2;
+    var innerH = padTop + headerH;
+    items.forEach(function(it){ innerH += it.sub ? subH : rowH; });
+    innerH += padBottom;
+    var H = innerH + margin * 2;
+    var canvas = document.createElement('canvas');
+    canvas.width = W * S; canvas.height = H * S;
+    var ctx = canvas.getContext('2d');
+    ctx.scale(S, S);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+    ctx.textBaseline = 'middle';
+    ctx.strokeStyle = '#111827';
+    ctx.lineWidth = 2;
+    var bx = margin, by = margin, bw = W - margin * 2, bh = innerH;
+    var r = 20;
+    ctx.beginPath();
+    ctx.moveTo(bx + r, by);
+    ctx.arcTo(bx + bw, by, bx + bw, by + bh, r);
+    ctx.arcTo(bx + bw, by + bh, bx, by + bh, r);
+    ctx.arcTo(bx, by + bh, bx, by, r);
+    ctx.arcTo(bx, by, bx + bw, by, r);
+    ctx.closePath();
+    ctx.stroke();
+    var font = function(w, s){ return w + ' ' + s + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'; };
+    function fit(text, maxW){
+      if(ctx.measureText(text).width <= maxW) return text;
+      var t = text;
+      while(t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1);
+      return t + '…';
+    }
+    var x0 = bx + padX, x1 = bx + bw - padX;
+    var y = by + padTop;
+    function drawFitted(text, maxW, align, x, cy, weight, size, minSize, color){
+      var s = size;
+      ctx.font = font(weight, s);
+      while(s > minSize && ctx.measureText(text).width > maxW){ s--; ctx.font = font(weight, s); }
+      ctx.fillStyle = color;
+      ctx.textAlign = align;
+      ctx.fillText(fit(text, maxW), x, cy);
+    }
+    drawFitted(name, model ? contentW * 0.55 : contentW, 'left', x0, y + headerH / 2, 800, 30, 22, '#111827');
+    if(model) drawFitted(model, contentW * 0.4, 'right', x1, y + headerH / 2, 800, 30, 22, '#111827');
+    y += headerH;
+    items.forEach(function(it, i){
+      var h = it.sub ? subH : rowH;
+      if(i > 0){
+        ctx.fillStyle = 'rgba(0,0,0,0.14)';
+        ctx.fillRect(x0, y, contentW, 1);
+      }
+      var cy = y + h / 2;
+      var lx = x0 + (it.sub ? 24 : 0);
+      drawFitted(it.label, contentW * 0.42, 'left', lx, cy, 400, it.sub ? 22 : 26, it.sub ? 18 : 20, it.sub ? '#6b7280' : '#1f2937');
+      drawFitted(it.value, contentW * 0.55, 'right', x1, cy, it.sub ? 600 : 700, it.sub ? 22 : 26, it.sub ? 18 : 20, '#111827');
+      y += h;
+    });
+    canvas.toBlob(function(blob){
+      if(!blob) return;
+      var a = document.createElement('a');
+      var safe = (name || 'Machine').replace(/[^A-Za-z0-9\-_]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+      a.download = 'Time-Calculator-' + (safe || 'Machine') + '.png';
+      a.href = URL.createObjectURL(blob);
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    }, 'image/png');
+  }
+
   [totalH, totalM].forEach(function(el){
     el.addEventListener('focus', function(){
       var v = parseInt(el.value, 10);
@@ -1205,6 +1295,7 @@
   document.getElementById('downtimeBox').addEventListener('click', showDowntime);
   document.getElementById('downtimeBackBtn').addEventListener('click', showMainFromDowntime);
   document.getElementById('printBtn').addEventListener('click', function(){ window.print(); });
+  document.getElementById('imageBtn').addEventListener('click', exportImage);
 
   if(!loadState()) setDefaults();
   applyLanguage();
