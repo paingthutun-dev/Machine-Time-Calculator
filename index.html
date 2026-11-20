@@ -109,6 +109,12 @@
     font-size:15px; font-weight:700; color:var(--text); font-family:inherit; outline:none;
   }
   .machine-row select:focus{border-color:var(--accent); background:var(--surface)}
+  .machine-row input{
+    flex:1; min-width:0; height:44px; background:var(--surface-2);
+    border:1.5px solid var(--line); border-radius:8px; padding:0 10px;
+    font-size:15px; font-weight:600; color:var(--text); font-family:inherit; outline:none;
+  }
+  .machine-row input:focus{border-color:var(--accent); background:var(--surface)}
   .machine-btn{
     flex:0 0 44px; height:44px; border:1.5px solid var(--line); background:var(--surface);
     color:var(--muted); border-radius:8px; font-size:16px; cursor:pointer; font-family:inherit;
@@ -185,7 +191,7 @@
   .down-duration strong{color:var(--text); font-size:15px}
 
   .result{background:var(--result-bg); color:var(--result-text); border-color:transparent}
-  .result-machine{font-size:15px; font-weight:800; margin-bottom:4px}
+  .result-machine{display:flex; justify-content:space-between; gap:14px; font-size:15px; font-weight:800; margin-bottom:4px}
   .result .field-head{margin-bottom:4px}
   .result label.title{color:var(--result-text)}
   .end-time{font-size:38px; font-weight:800; line-height:1.1; letter-spacing:-.02em; margin:10px 0 2px}
@@ -244,6 +250,7 @@
 
     <div class="machine-row">
       <select id="machineSelect" aria-label="Machine"></select>
+      <input type="text" id="modelInput" placeholder="Model No." aria-label="Model number" autocomplete="off" />
       <button type="button" class="machine-btn" id="machineRenameBtn" aria-label="Rename machine">✏️</button>
       <button type="button" class="machine-btn" id="machineDelBtn" aria-label="Delete machine">🗑</button>
     </div>
@@ -313,7 +320,7 @@
     <span class="day-note" id="dayNote"></span>
 
     <div class="summary">
-      <div class="result-machine" id="resultMachine">Machine 1</div>
+      <div class="result-machine" id="resultMachine"><span id="resultMachineName">Machine 1</span><span id="resultMachineModel"></span></div>
       <div class="summary-row"><span id="sumStartLabel">Start</span><strong class="num" id="sumStart">—</strong></div>
       <div class="summary-row"><span id="sumTotalLabel">Total duration</span><strong class="num" id="sumTotal">—</strong></div>
       <div class="summary-row"><span id="sumDownLabel">Downtime</span><strong class="num" id="sumDown">—</strong></div>
@@ -379,7 +386,7 @@
   }
   function newMachine(){
     var job = defaultJob();
-    return { id: newMachineId(), name: '', start: job.start, totalH: job.totalH, totalM: job.totalM, downs: job.downs };
+    return { id: newMachineId(), name: '', model: '', start: job.start, totalH: job.totalH, totalM: job.totalM, downs: job.downs };
   }
   function activeMachine(){
     for(var i = 0; i < machines.length; i++){
@@ -408,6 +415,8 @@
     if(s !== null) m.start = s;
     m.totalH = totalH.value;
     m.totalM = totalM.value;
+    var mi = document.getElementById('modelInput');
+    if(mi) m.model = mi.value.trim();
     var oldDowns = Array.isArray(m.downs) ? m.downs : [];
     m.downs = entryEls().map(function(entry, i){
       var old = oldDowns[i] || {};
@@ -423,6 +432,7 @@
   }
   function writeMachineToForm(m){
     openDownEntry = null;
+    document.getElementById('modelInput').value = m.model || '';
     var s = splitISO(m.start);
     startDateEl.value = s.date;
     startTimeEl.value = s.time;
@@ -535,6 +545,7 @@
   var T = {
     en: {
       machineLabel: 'Machine No.',
+      modelLabel: 'Model No.',
       addMachine: '＋ Add machine',
       renameMachine: 'Rename machine',
       deleteMachine: 'Delete machine',
@@ -579,6 +590,7 @@
     },
     zh: {
       machineLabel: '机器编号',
+      modelLabel: '型号',
       addMachine: '＋ 添加机器',
       renameMachine: '重命名机器',
       deleteMachine: '删除机器',
@@ -1025,6 +1037,7 @@
     document.getElementById('downtimeHint').textContent = s.downtimeHint;
     document.getElementById('downtimeBoxLabel').textContent = s.downtimeLabel;
     document.getElementById('downtimeBoxHint').textContent = s.tapToEdit;
+    document.getElementById('modelInput').placeholder = s.modelLabel;
     document.getElementById('downtimeBackBtn').textContent = '← ' + s.backBtn;
     document.getElementById('addDownBtn').textContent = s.addDowntime;
     document.getElementById('endLabel').textContent = s.endLabel;
@@ -1058,8 +1071,11 @@
     var filled = entries.filter(function(e){ return e.filled; });
     document.getElementById('totalText').textContent = fmtDuration(total);
     document.getElementById('downText').textContent  = fmtDuration(down);
-    document.getElementById('resultMachine').textContent =
-      machineDisplayName(activeMachine(), activeMachineIndex());
+    var am = activeMachine();
+    document.getElementById('resultMachineName').textContent =
+      machineDisplayName(am, activeMachineIndex());
+    document.getElementById('resultMachineModel').textContent =
+      (am && (am.model || '').trim()) ? am.model.trim() : '';
     refreshEntryLabels();
 
     var endTimeEl = document.getElementById('endTime');
@@ -1161,6 +1177,7 @@
   });
   machineRenameBtn.addEventListener('click', renameMachine);
   machineDelBtn.addEventListener('click', deleteMachine);
+  document.getElementById('modelInput').addEventListener('input', calculate);
 
   document.getElementById('langEn').addEventListener('click', function(){ setLanguage('en'); });
   document.getElementById('langZh').addEventListener('click', function(){ setLanguage('zh'); });
