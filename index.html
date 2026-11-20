@@ -130,7 +130,7 @@
   .btn-ghost{background:var(--surface-2); border:1.5px solid var(--line); color:var(--text)}
   .btn-ghost:hover{border-color:var(--line-strong)}
 
-  .duration{display:grid; grid-template-columns:1fr auto 1fr; gap:10px; align-items:start}
+  .duration{display:grid; grid-template-columns:1fr auto 1fr auto 1fr; gap:10px; align-items:start}
   .duration .colon{padding-top:12px; font-weight:800; color:var(--muted); font-size:18px}
   .duration input{text-align:center; font-size:20px; font-weight:800; padding:9px 8px}
   .duration small{display:block; text-align:center; color:var(--muted); font-size:12px; font-weight:600; margin-top:5px}
@@ -281,6 +281,11 @@
       </div>
       <div class="duration">
         <div>
+          <input type="number" id="totalD" min="0" max="999" inputmode="numeric" value="0" aria-label="Total duration days" />
+          <small id="totalDaysLabel">Days</small>
+        </div>
+        <div class="colon">:</div>
+        <div>
           <input type="number" id="totalH" min="0" max="999" inputmode="numeric" value="8" aria-label="Total duration hours" />
           <small id="totalHoursLabel">Hours</small>
         </div>
@@ -364,6 +369,7 @@
   var machineSelect = document.getElementById('machineSelect');
   var machineRenameBtn = document.getElementById('machineRenameBtn');
   var machineDelBtn = document.getElementById('machineDelBtn');
+  var totalD = document.getElementById('totalD');
   var totalH = document.getElementById('totalH');
   var totalM = document.getElementById('totalM');
   var downList = document.getElementById('downtimeList');
@@ -384,11 +390,11 @@
   }
   function defaultJob(){
     var s = new Date(); s.setHours(8,0,0,0);
-    return { start: toLocalInputValue(s), totalH: '8', totalM: '00', downs: [{ from: '', to: '' }] };
+    return { start: toLocalInputValue(s), totalD: '0', totalH: '8', totalM: '00', downs: [{ from: '', to: '' }] };
   }
   function newMachine(){
     var job = defaultJob();
-    return { id: newMachineId(), name: '', model: '', start: job.start, totalH: job.totalH, totalM: job.totalM, downs: job.downs };
+    return { id: newMachineId(), name: '', model: '', start: job.start, totalD: job.totalD, totalH: job.totalH, totalM: job.totalM, downs: job.downs };
   }
   function activeMachine(){
     for(var i = 0; i < machines.length; i++){
@@ -415,6 +421,7 @@
     if(!m) return;
     var s = dtISO(startDateEl, startTimeEl);
     if(s !== null) m.start = s;
+    m.totalD = totalD.value;
     m.totalH = totalH.value;
     m.totalM = totalM.value;
     var mi = document.getElementById('modelInput');
@@ -439,6 +446,7 @@
     startDateEl.value = s.date;
     startTimeEl.value = s.time;
     startTimeEl.classList.remove('bad');
+    totalD.value = (m.totalD === undefined ? '0' : m.totalD);
     totalH.value = m.totalH;
     totalM.value = m.totalM;
     downList.innerHTML = '';
@@ -530,6 +538,7 @@
         var m = newMachine();
         m.name = typeof s.machine === 'string' ? s.machine : '';
         m.start = s.start;
+        if(typeof s.totalD !== 'undefined') m.totalD = s.totalD;
         if(typeof s.totalH !== 'undefined') m.totalH = s.totalH;
         if(typeof s.totalM !== 'undefined') m.totalM = s.totalM;
         if(Array.isArray(s.downs) && s.downs.length) m.downs = s.downs;
@@ -557,6 +566,7 @@
       now: 'Now',
       totalLabel: 'Total Duration',
       totalHint: 'The running time the job needs, not counting downtime.',
+      days: 'Days',
       hours: 'Hours',
       minutes: 'Minutes',
       totalCaption: 'Total:',
@@ -585,6 +595,7 @@
       backBtn: 'Back',
       remove: 'Remove',
       removeAria: 'Remove this downtime entry',
+      totalDaysAria: 'Total duration days',
       totalHoursAria: 'Total duration hours',
       totalMinutesAria: 'Total duration minutes',
       footer: 'If the end time passes midnight, the date moves to the next day automatically.',
@@ -603,6 +614,7 @@
       now: '现在',
       totalLabel: '总时长',
       totalHint: '作业所需的运行时间，不包括停机时间。',
+      days: '天',
       hours: '小时',
       minutes: '分钟',
       totalCaption: '总计：',
@@ -631,6 +643,7 @@
       backBtn: '返回',
       remove: '删除',
       removeAria: '删除此停机记录',
+      totalDaysAria: '总时长（天）',
       totalHoursAria: '总时长（小时）',
       totalMinutesAria: '总时长（分钟）',
       footer: '如果结束时间超过午夜，日期将自动顺延至次日。',
@@ -701,6 +714,11 @@
     var m = parseInt(mEl.value,10); if(isNaN(m)||m<0) m=0;
     return h*60 + m;
   }
+  // Total duration in minutes: days + hours + minutes.
+  function readTotalMins(){
+    var d = parseInt(totalD.value,10); if(isNaN(d)||d<0) d=0;
+    return d*1440 + readMins(totalH, totalM);
+  }
   function fmtDuration(mins){
     var h = Math.floor(mins/60), m = mins%60;
     if(lang === 'zh') return h+'小时'+pad(m)+'分钟';
@@ -757,11 +775,14 @@
     mEl.value = (m === 0 && mBlank) ? '' : m;
   }
   function normalizeTotalSoft(){
+    var dBlank = totalD.value.trim() === '';
     var hBlank = totalH.value.trim() === '';
     var mBlank = totalM.value.trim() === '';
-    if(hBlank && mBlank) return;
-    var mins = readMins(totalH, totalM);
-    var h = Math.floor(mins/60), m = mins%60;
+    if(dBlank && hBlank && mBlank) return;
+    var mins = readTotalMins();
+    var d = Math.floor(mins/1440), rem = mins%1440;
+    var h = Math.floor(rem/60), m = rem%60;
+    totalD.value = (d === 0 && dBlank) ? '' : d;
     totalH.value = (h === 0 && hBlank) ? '' : h;
     totalM.value = (m === 0) ? '00' : m;
   }
@@ -1017,6 +1038,7 @@
     if(!m) return;
     var job = defaultJob();
     m.start = job.start;
+    m.totalD = job.totalD;
     m.totalH = job.totalH;
     m.totalM = job.totalM;
     m.downs = job.downs;
@@ -1034,6 +1056,7 @@
     document.getElementById('nowBtn').textContent = s.now;
     document.getElementById('totalLabel').textContent = s.totalLabel;
     document.getElementById('totalHint').textContent = s.totalHint;
+    document.getElementById('totalDaysLabel').textContent = s.days;
     document.getElementById('totalHoursLabel').textContent = s.hours;
     document.getElementById('totalMinutesLabel').textContent = s.minutes;
     document.getElementById('totalCaption').textContent = s.totalCaption;
@@ -1054,6 +1077,7 @@
     document.getElementById('footerNote').textContent = s.footer;
     machineRenameBtn.setAttribute('aria-label', s.renameMachine);
     machineDelBtn.setAttribute('aria-label', s.deleteMachine);
+    totalD.setAttribute('aria-label', s.totalDaysAria);
     totalH.setAttribute('aria-label', s.totalHoursAria);
     totalM.setAttribute('aria-label', s.totalMinutesAria);
     startDateEl.setAttribute('aria-label', s.startDateAria);
@@ -1070,7 +1094,7 @@
 
   function calculate(){
     saveState();
-    var total = readMins(totalH, totalM);
+    var total = readTotalMins();
     var entries = downtimeEntries();
     var down  = entries.reduce(function(a,b){ return a+b.mins; }, 0);
     var filled = entries.filter(function(e){ return e.filled; });
@@ -1243,7 +1267,7 @@
     }, 'image/png');
   }
 
-  [totalH, totalM].forEach(function(el){
+  [totalD, totalH, totalM].forEach(function(el){
     el.addEventListener('focus', function(){
       var v = parseInt(el.value, 10);
       if(isNaN(v) || v === 0){ el.value = ''; }
